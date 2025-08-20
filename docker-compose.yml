@@ -1,0 +1,114 @@
+services:
+  # Определяем название приложения в services.
+  bot_core:
+    # Задаём название сети для контейнера.
+    networks:
+      - bot_core
+    # Задаём имя контейнера.
+    container_name: app_core
+    # Сообщаем что для сервиса надо запустить Dockerfile и указываем путь к нему.
+    build:
+      dockerfile: Dockerfile
+    # Устанавливаем команду для применения миграций и для запуска сервера.
+    command: >
+       sh -c "python manage.py migrate && uvicorn rndvu.asgi:application --host 0.0.0.0 --port 8000 & python bot.py"
+    # Параметр сопоставляющий порты между хостом(8000) и контейнером(8000).
+    ports:
+      - '8000:8000'
+    # В параметр указываются приложения, которые должны быть запущены перед запуском приложения.
+    depends_on:
+      - redis
+    # Подгружаем глобальные (логин,пароль БД) переменные для БД из .env файла.
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Moscow
+    # Указываем что всё(все локальные изменения) в текущей директории должно быть доступно в контейнере.
+    volumes:
+      - .:/rndvu
+    # Контейнер будет перезапускаться, если он был остановлен, за исключением, когда он был остановлен вручную.
+    restart: unless-stopped
+
+  # Сервис Redis
+  redis:
+    # Задаём название сети для контейнера.
+    networks:
+      - bot_core
+    # Задаём имя контейнера.
+    container_name: redis
+    # Указываем какой образ использовать для запуска контейнера.
+    image: redis:alpine
+    # command: redis-server --appendonly yes --bind 0.0.0.0--protected-mode no
+    command:
+      - redis-server
+      - --bind 0.0.0.0
+      - --protected-mode no
+      - --cluster-enabled no          # Жёстко вырубаем кластер
+      - --cluster-require-full-coverage no
+      - --replica-read-only no       # Даже если станет репликой — разрешаем запись
+      - --replicaof no one           # Формальный синтаксис "никаких реплик"
+      - --appendonly yes
+    environment:
+      TZ: Europe/Moscow
+    # Параметр сопоставляющий порты между хостом(6379) и контейнером(6379).
+    ports:
+      - '6379:6379'
+    # Контейнер будет перезапускаться, если он был остановлен, за исключением, когда он был остановлен вручную.
+    restart: unless-stopped
+
+
+  # Сервис Celery
+  celery:
+    # Задаём название сети для контейнера.
+    networks:
+      - bot_core
+    # Задаём имя контейнера.
+    container_name: celery
+    # Сообщаем что для сервиса надо запустить Dockerfile и указываем путь к нему.
+    build:
+      dockerfile: Dockerfile
+    command: celery -A rndvu worker --loglevel=info
+    # В параметр указываются приложения, которые должны быть запущены перед запуском приложения celery.
+    depends_on:
+      - redis
+    # Подгружаем глобальные переменные из .env файла.
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Moscow
+    # Указываем том для хранения данных celery. Что бы не потерять данный при остановке контейнера.
+    volumes:
+      - .:/rndvu
+    # Контейнер будет перезапускаться, если он был остановлен, за исключением, когда он был остановлен вручную.
+    restart: unless-stopped
+
+
+  # Сервис для Celery Beat.
+  celery-beat:
+    # Задаём название сети для контейнера.
+    networks:
+      - bot_core
+    # Задаём имя контейнера.
+    container_name: celery_beat
+    # Сообщаем что для сервиса надо запустить Dockerfile и указываем путь к нему.
+    build:
+      dockerfile: Dockerfile
+    command: celery -A rndvu beat --loglevel=info
+    # В параметр указываются приложения, которые должны быть запущены перед запуском приложения celery beat.
+    depends_on:
+      - redis
+    # Подгружаем глобальные переменные из .env файла.
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Moscow
+    # Указываем том для хранения данных celery. Что бы не потерять данный при остановке контейнера.
+    volumes:
+      - .:/rndvu
+    # Контейнер будет перезапускаться, если он был остановлен, за исключением, когда он был остановлен вручную.
+    restart: unless-stopped
+
+# Соединяем все контейнеры, где указана сеть, в одну сеть.
+networks:
+  bot_core:
+    driver: bridge
