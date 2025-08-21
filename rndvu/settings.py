@@ -37,14 +37,12 @@ CORS_ALLOW_HEADERS = list(default_headers) + ["x-init-data", "x-test-mode"]
 # IP адреса или доменные имена, которые имеют доступ к приложению
 ALLOWED_HOSTS = ['*']
 
-CORS_ALLOW_ALL_ORIGINS = True
-CSRF_TRUSTED_ORIGINS = []
-
-# # Переменная для управления CORS, содержит список доменов с которых разрешены запросы
-# CORS_ALLOWED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000']
-# # Переменная определяет список доменов, которым Django доверяет при обработке CSRF-токенов.
-# CSRF_TRUSTED_ORIGINS = ['https://92.51.37.109', 'https://astro.printer-game.com', "http://localhost:5173",
-#                         'http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000', 'https://astrokitchen-frontend.vercel.app']
+# Переменная для управления CORS, содержит список доменов с которых разрешены запросы
+CORS_ALLOWED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.info', "http://localhost:5173",
+                        'http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000']
+# Переменная определяет список доменов, которым Django доверяет при обработке CSRF-токенов.
+CSRF_TRUSTED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.info', "http://localhost:5173",
+                        'http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000']
 
 # Application definition
 
@@ -68,7 +66,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    # 'django.middleware.csrf.CsrfViewMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -174,8 +172,8 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = "Europe/Moscow"
 CELERY_BEAT_SCHEDULE = {
     # "free_attempts": {
-    #     "task": "app_core.tasks.reset_today_free_attempts",
-    #     "schedule": crontab(0, 0),  # Каждый день в 00:00 обновляем поле free_attempts
+    #     "task": "core_rndvu.tasks.name_tasks",
+    #     "schedule": crontab(0, 0),  # Каждый день в 00:00 запускаем задачу
     # },
 }
 
