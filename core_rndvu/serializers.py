@@ -1,7 +1,8 @@
 from adrf.fields import SerializerMethodField
-from adrf.serializers import ModelSerializer
+from adrf.serializers import ModelSerializer, Serializer
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
+from rest_framework import serializers
 from core_rndvu.models import *
 
 # Импортируем LANGUAGE_CHOICES из models
@@ -11,10 +12,12 @@ from core_rndvu.models import LANGUAGE_CHOICES
 class PlayerSerializer(ModelSerializer):
     """Сериализатор модели Player"""
     gender_choices = SerializerMethodField()
-    
+    like_ratio = serializers.FloatField(read_only=True)
+
     class Meta:
         model = Player
         fields = "__all__"
+        read_only_fields = ['like_ratio']
 
     @extend_schema_field(list[OpenApiTypes.OBJECT])
     def get_gender_choices(self, obj):
@@ -31,44 +34,44 @@ class ProfileManSerializer(ModelSerializer):
         fields = '__all__'
 
 
-def calc_like_ratio(likes_count: int, dislikes_count: int) -> float:
-    """
-    Рассчитывает процент пользователей, которым понравилось фото.
-    :param likes_count: количество лайков
-    :param dislikes_count: количество дизлайков
-    :return: число от 0 до 100 (% лайков от всех реакций)
-    """
-    total = likes_count + dislikes_count
-    if total == 0:
-        return 0.0
-    return round((likes_count / total) * 100, 2)
+# def calc_like_ratio(likes_count: int, dislikes_count: int) -> float:
+#     """
+#     Рассчитывает процент пользователей, которым понравилось фото.
+#     :param likes_count: количество лайков
+#     :param dislikes_count: количество дизлайков
+#     :return: число от 0 до 100 (% лайков от всех реакций)
+#     """
+#     total = likes_count + dislikes_count
+#     if total == 0:
+#         return 0.0
+#     return round((likes_count / total) * 100, 2)
 
 
 class ManPhotoSerializer(ModelSerializer):
     """Сериализатор фото мужского профиля"""
-    user_reaction = SerializerMethodField()
-    likes_count = SerializerMethodField()
-    dislikes_count = SerializerMethodField()
-    like_ratio = SerializerMethodField()
+    # user_reaction = SerializerMethodField()
+    # likes_count = SerializerMethodField()
+    # dislikes_count = SerializerMethodField()
+    # like_ratio = SerializerMethodField()
 
     class Meta:
         model = ManPhoto
-        fields = ["id", "image", "uploaded_at", "user_reaction", "likes_count", "dislikes_count", "like_ratio"]
+        fields = ["id", "image", "uploaded_at", "main_photo"]
 
-    def get_user_reaction(self, obj):
-        # Берём из префетча: Prefetch(..., to_attr="user_reactions")
-        ur = getattr(obj, "user_reactions", None)
-        return ur[0].reaction_type if ur else None
-
-    def get_likes_count(self, obj):
-        # Берём из аннотации queryset-а (см. Prefetch ниже)
-        return getattr(obj, "likes_count", 0)
-
-    def get_dislikes_count(self, obj):
-        return getattr(obj, "dislikes_count", 0)
-
-    def get_like_ratio(self, obj):
-        return calc_like_ratio(getattr(obj, "likes_count", 0), getattr(obj, "dislikes_count", 0))
+    # def get_user_reaction(self, obj):
+    #     # Берём из префетча: Prefetch(..., to_attr="user_reactions")
+    #     ur = getattr(obj, "user_reactions", None)
+    #     return ur[0].reaction_type if ur else None
+    #
+    # def get_likes_count(self, obj):
+    #     # Берём из аннотации queryset-а (см. Prefetch ниже)
+    #     return getattr(obj, "likes_count", 0)
+    #
+    # def get_dislikes_count(self, obj):
+    #     return getattr(obj, "dislikes_count", 0)
+    #
+    # def get_like_ratio(self, obj):
+    #     return calc_like_ratio(getattr(obj, "likes_count", 0), getattr(obj, "dislikes_count", 0))
 
 
 class FullProfileManSerializer(ModelSerializer):
@@ -99,27 +102,27 @@ class ProfileWomanSerializer(ModelSerializer):
 
 class WomanPhotoSerializer(ModelSerializer):
     """Сериализатор фото женского профиля"""
-    user_reaction = SerializerMethodField()
-    likes_count = SerializerMethodField()
-    dislikes_count = SerializerMethodField()
-    like_ratio = SerializerMethodField()
+    # user_reaction = SerializerMethodField()
+    # likes_count = SerializerMethodField()
+    # dislikes_count = SerializerMethodField()
+    # like_ratio = SerializerMethodField()
 
     class Meta:
         model = WomanPhoto
-        fields = ["id", "image", "uploaded_at", "user_reaction", "likes_count", "dislikes_count", "like_ratio"]
+        fields = ["id", "image", "uploaded_at", "main_photo"]
 
-    def get_user_reaction(self, obj):
-        ur = getattr(obj, "user_reactions", None)
-        return ur[0].reaction_type if ur else None
-
-    def get_likes_count(self, obj):
-        return getattr(obj, "likes_count", 0)
-
-    def get_dislikes_count(self, obj):
-        return getattr(obj, "dislikes_count", 0)
-
-    def get_like_ratio(self, obj):
-        return calc_like_ratio(getattr(obj, "likes_count", 0), getattr(obj, "dislikes_count", 0))
+    # def get_user_reaction(self, obj):
+    #     ur = getattr(obj, "user_reactions", None)
+    #     return ur[0].reaction_type if ur else None
+    #
+    # def get_likes_count(self, obj):
+    #     return getattr(obj, "likes_count", 0)
+    #
+    # def get_dislikes_count(self, obj):
+    #     return getattr(obj, "dislikes_count", 0)
+    #
+    # def get_like_ratio(self, obj):
+    #     return calc_like_ratio(getattr(obj, "likes_count", 0), getattr(obj, "dislikes_count", 0))
 
 
 class FullProfileWomanSerializer(ModelSerializer):
@@ -160,12 +163,12 @@ class ProfileUpdateSerializer(ModelSerializer):
         super().__init__(*args, **kwargs)
 
 
-class PhotoReactionSerializer(ModelSerializer):
-    """Сериализатор для реакций на фото"""
-    class Meta:
-        model = PhotoReaction
-        fields = ['id', 'player', 'man_photo', 'woman_photo', 'reaction_type', 'created_at']
-        read_only_fields = ['id', 'created_at']
+# class PhotoReactionSerializer(ModelSerializer):
+#     """Сериализатор для реакций на фото"""
+#     class Meta:
+#         model = PhotoReaction
+#         fields = ['id', 'player', 'man_photo', 'woman_photo', 'reaction_type', 'created_at']
+#         read_only_fields = ['id', 'created_at']
 
 
 class SympathySerializer(ModelSerializer):
@@ -226,3 +229,120 @@ class FavoriteSerializer(ModelSerializer):
 
     def get_owner(self, obj):
         return obj.owner.tg_id
+
+
+class MainPhotoResponseSerializer(Serializer):
+    message = serializers.CharField()
+    main_photo_id = serializers.IntegerField()
+
+
+class GameUsersResponseSerializer(serializers.Serializer):
+    results = GameUserSerializer(many=True)
+    page = serializers.IntegerField()
+    page_size = serializers.IntegerField()
+    total_pages = serializers.IntegerField()
+    total_count = serializers.IntegerField(required=False)
+    has_prev = serializers.BooleanField(required=False)
+    has_next = serializers.BooleanField(required=False)
+    prev_page = serializers.IntegerField(required=False, allow_null=True)
+    next_page = serializers.IntegerField(required=False, allow_null=True)
+
+
+class SympathyResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    sympathy = SympathySerializer()
+
+
+class MutualSympathyResponseSerializer(serializers.Serializer):
+    mutual = SympathySerializer(many=True)
+
+
+class DeleteSympathyResponseSerializer(serializers.Serializer):
+    deleted = serializers.BooleanField()
+    message = serializers.CharField(required=False, allow_null=True)
+
+
+class FavoriteResponseSerializer(serializers.Serializer):
+    created = serializers.BooleanField()
+    favorite = FavoriteSerializer()
+
+
+class FavoriteItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    created_at = serializers.DateTimeField()
+    target = PlayerSerializer()
+
+
+class FavoriteListResponseSerializer(serializers.Serializer):
+    results = FavoriteItemSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+class DeleteFavoriteResponseSerializer(serializers.Serializer):
+    deleted = serializers.BooleanField()
+
+
+class UserLikeRequestSerializer(serializers.Serializer):
+    """Схема запроса для UserLikeView"""
+    to_player_tg_id = serializers.CharField(help_text="Telegram ID игрока, которому ставим реакцию")
+    reaction_type = serializers.ChoiceField(
+        choices=["like", "dislike"],
+        help_text="Тип реакции: 'like' или 'dislike'"
+    )
+
+
+class UserLikeResponseStatsSerializer(serializers.Serializer):
+    """Вложенная схема статистики"""
+    likes_count = serializers.IntegerField()
+    dislikes_count = serializers.IntegerField()
+    like_ratio = serializers.FloatField()
+
+
+class UserLikeResponseSerializer(serializers.Serializer):
+    """Схема ответа для UserLikeView"""
+    message = serializers.CharField()
+    removed = serializers.BooleanField()
+    stats = UserLikeResponseStatsSerializer()
+
+
+class CreatePaymentRequestSerializer(serializers.Serializer):
+    """Схема запроса для CreatePaymentView"""
+    product_id = serializers.IntegerField(
+        help_text="ID продукта для оплаты"
+    )
+    return_url = serializers.URLField(
+        required=False,
+        help_text="URL, на который пользователь вернётся после оплаты"
+    )
+    init_data = serializers.JSONField(
+        help_text="Данные инициализации Telegram WebApp (telegram_user)"
+    )
+
+
+class CreatePaymentResponseSerializer(serializers.Serializer):
+    """Схема ответа для CreatePaymentView"""
+    payment_url = serializers.URLField(
+        help_text="Ссылка на оплату YooKassa"
+    )
+    payment_id = serializers.CharField(
+        help_text="ID платежа в YooKassa"
+    )
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Схема ошибки"""
+    error = serializers.CharField(help_text="Описание ошибки")
+
+
+class EventSerializer(ModelSerializer):
+    """Сериализатор для модели Event"""
+    profile_tg_id = serializers.CharField(source="profile.tg_id", read_only=True)
+    class Meta:
+        model = Event
+        fields = '__all__'
+        read_only_fields = ['id', 'profile', 'profile_tg_id', 'creator', 'created_at', 'updated_at', 'is_active']
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields.pop('profile', None)  # выпиливаем profile
+        return fields

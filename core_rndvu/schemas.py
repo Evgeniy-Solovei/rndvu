@@ -1,6 +1,8 @@
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, OpenApiResponse, OpenApiExample
-
+from drf_spectacular.utils import OpenApiParameter, extend_schema, OpenApiResponse, OpenApiExample, inline_serializer, \
+    PolymorphicProxySerializer
+from rest_framework import serializers
+from core_rndvu.serializers import *
 
 player_info_schema = extend_schema(
     tags=["Игрок"],
@@ -14,37 +16,12 @@ player_info_schema = extend_schema(
     ),
     request=None,
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное создание или получение игрока",
-            examples=[
-                OpenApiExample(
-                    name="Игрок создан",
-                    value={
-                        "created": True,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Иван",
-                            "username": "ivanov",
-                            "language_code": "ru"
-                        }
-                    },
-                ),
-                OpenApiExample(
-                    name="Игрок уже существует",
-                    value={
-                        "created": False,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Иван",
-                            "username": "ivanov",
-                            "language_code": "ru"
-                        }
-                    },
-                ),
-            ],
+        200: inline_serializer(
+            name='PlayerInfoResponse',
+            fields={
+                'created': serializers.BooleanField(),
+                'player': PlayerSerializer(),
+            }
         ),
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
@@ -99,47 +76,25 @@ player_gender_update_schema = extend_schema(
     ),
     request=OpenApiTypes.OBJECT,
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное обновление пола и создание профиля",
-            examples=[
-                OpenApiExample(
-                    name="Установлен мужской пол",
-                    value={
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Иван",
-                            "username": "ivanov",
-                            "language_code": "ru",
-                            "gender": "Man"
-                        },
-                        "profile": {
-                            "id": 1,
-                            "player": 1,
-                            # ... другие поля ProfileMan
-                        }
-                    },
+        200: PolymorphicProxySerializer(
+            component_name='PlayerGenderUpdateResponse',
+            serializers=[
+                inline_serializer(
+                    name='ManResponse',
+                    fields={
+                        'player': PlayerSerializer(),
+                        'profile': ProfileManSerializer(),
+                    }
                 ),
-                OpenApiExample(
-                    name="Установлен женский пол",
-                    value={
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Мария",
-                            "username": "maria",
-                            "language_code": "ru",
-                            "gender": "Woman"
-                        },
-                        "profile": {
-                            "id": 1,
-                            "player": 1,
-                            # ... другие поля ProfileWoman
-                        }
-                    },
+                inline_serializer(
+                    name='WomanResponse',
+                    fields={
+                        'player': PlayerSerializer(),
+                        'profile': ProfileWomanSerializer(),
+                    }
                 ),
             ],
+            resource_type_field_name=None,
         ),
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
@@ -229,11 +184,21 @@ user_profile_schema = extend_schema(
             required=False,
             description="Если true — работает без проверки Telegram (тестовый режим)"
         ),
-    ],
+    ]
+)
+
+# Схема для GET метода
+user_profile_get_schema = extend_schema(
+    summary="Получить анкету пользователя",
+    description="Получить анкету пользователя с фото (без лайков/дизлайков на фото)",
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное выполнение операции",
+        200: PolymorphicProxySerializer(
+            component_name='UserProfileResponse',
+            serializers=[
+                FullProfileManSerializer,
+                FullProfileWomanSerializer,
+            ],
+            resource_type_field_name=None,
         ),
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
@@ -243,6 +208,52 @@ user_profile_schema = extend_schema(
                     name="Ошибка: пол не указан",
                     value={"error": "Пол пользователя не указан"},
                 ),
+            ],
+        ),
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Ресурс не найден",
+            examples=[
+                OpenApiExample(
+                    name="Анкета не найдена",
+                    value={"error": "Анкета не найдена"},
+                ),
+                OpenApiExample(
+                    name="Игрок не найден",
+                    value={"error": "Игрок не найден"},
+                ),
+            ],
+        ),
+        500: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Внутренняя ошибка сервера",
+            examples=[
+                OpenApiExample(
+                    name="Ошибка сервера",
+                    value={"error": "Internal server error"},
+                ),
+            ],
+        ),
+    }
+)
+
+# Схема для PATCH метода
+user_profile_patch_schema = extend_schema(
+    summary="Частично обновить анкету",
+    description="Частично обновить анкету (и фото)",
+    responses={
+        200: PolymorphicProxySerializer(
+            component_name='UserProfileResponse',
+            serializers=[
+                FullProfileManSerializer,
+                FullProfileWomanSerializer,
+            ],
+            resource_type_field_name=None,
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Неверные данные или ошибка валидации",
+            examples=[
                 OpenApiExample(
                     name="Ошибка валидации",
                     value={"error": "Ошибка валидации", "details": {"field": ["Ошибка"]}},
@@ -276,138 +287,147 @@ user_profile_schema = extend_schema(
     }
 )
 
-user_profile_get_schema = extend_schema(
-    summary="Получить анкету пользователя",
-    description=(
-        "Возвращает полную анкету пользователя с фото, счетчиками лайков/дизлайков "
-        "и реакциями текущего пользователя на каждое фото."
-    ),
+# Схема для PUT метода
+user_profile_put_schema = extend_schema(
+    summary="Полностью обновить анкету",
+    description="Полностью обновить анкету (и фото)",
     responses={
-        200: OpenApiResponse(
+        200: PolymorphicProxySerializer(
+            component_name='UserProfileResponse',
+            serializers=[
+                FullProfileManSerializer,
+                FullProfileWomanSerializer,
+            ],
+            resource_type_field_name=None,
+        ),
+        400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
-            description="Успешное получение анкеты",
+            description="Неверные данные или ошибка валидации",
             examples=[
                 OpenApiExample(
-                    name="Мужская анкета",
-                    value={
-                        "id": 1,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Иван",
-                            "username": "ivanov",
-                            "language_code": "ru",
-                            "gender": "Man"
-                        },
-                        "photos": [
-                            {
-                                "id": 1,
-                                "image": "http://example.com/photo1.jpg",
-                                "likes_count": 5,
-                                "dislikes_count": 2,
-                                "user_reactions": [{"reaction_type": "like"}]
-                            }
-                        ],
-                        # ... другие поля анкеты
-                    },
+                    name="Ошибка валидации",
+                    value={"error": "Ошибка валидации", "details": {"field": ["Ошибка"]}},
+                ),
+            ],
+        ),
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Ресурс не найден",
+            examples=[
+                OpenApiExample(
+                    name="Анкета не найдена",
+                    value={"error": "Анкета не найдена"},
                 ),
                 OpenApiExample(
-                    name="Женская анкета",
-                    value={
-                        "id": 1,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 123456789,
-                            "first_name": "Мария",
-                            "username": "maria",
-                            "language_code": "ru",
-                            "gender": "Woman"
-                        },
-                        "photos": [
-                            {
-                                "id": 1,
-                                "image": "http://example.com/photo1.jpg",
-                                "likes_count": 15,
-                                "dislikes_count": 3,
-                                "user_reactions": [{"reaction_type": "dislike"}]
-                            }
-                        ],
-                        # ... другие поля анкеты
-                    },
+                    name="Игрок не найден",
+                    value={"error": "Игрок не найден"},
+                ),
+            ],
+        ),
+        500: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Внутренняя ошибка сервера",
+            examples=[
+                OpenApiExample(
+                    name="Ошибка сервера",
+                    value={"error": "Internal server error"},
                 ),
             ],
         ),
     }
 )
 
-user_profile_patch_schema = extend_schema(
-    summary="Частично обновить анкету",
+
+
+user_main_photo_schema = extend_schema(
+    tags=["Анкета"],
+    summary="Выбор главного фото в анкете пользователя",
     description=(
-        "Частичное обновление анкеты пользователя. Поддерживает загрузку новых фото "
-        "и удаление существующих через multipart/form-data.\n\n"
-        "Параметры:\n"
-        "- photos: файлы для загрузки (можно несколько)\n"
-        "- delete_photo_ids: ID фото для удаления (через запятую или массив)\n"
-        "- Любые другие поля анкеты для обновления"
+        "Этот endpoint позволяет установить одно из загруженных фото как главное в анкете пользователя.\n\n"
+        "⚠️ Требуется заголовок `X-Init-Data` с init_data от Telegram.\n"
+        "Можно включить `X-Test-Mode: true`, чтобы протестировать без Telegram.\n\n"
+        "При выборе главного фото:\n"
+        "- С выбранного фото устанавливается флаг `main_photo = True`\n"
+        "- Со всех остальных фото пользователя флаг `main_photo` снимается\n"
+        "- Главное фото будет отображаться первым в анкете\n\n"
+        "Фото должно быть предварительно загружено через endpoint загрузки фото."
     ),
+    parameters=[
+        OpenApiParameter(
+            name="X-Init-Data",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=True,
+            description="Строка init_data от Telegram WebApp (Telegram.WebApp.initData)"
+        ),
+        OpenApiParameter(
+            name="X-Test-Mode",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=False,
+            description="Если true — работает без проверки Telegram (тестовый режим)"
+        ),
+    ],
     request={
-        'multipart/form-data': {
-            'type': 'object',
-            'properties': {
-                'photos': {
-                    'type': 'array',
-                    'items': {'type': 'string', 'format': 'binary'},
-                    'description': 'Новые фото для загрузки'
-                },
-                'delete_photo_ids': {
-                    'type': 'string',
-                    'description': 'ID фото для удаления (через запятую)'
-                },
-                # Другие поля анкеты
-                'field_name': {'type': 'string', 'description': 'Любое поле анкеты'}
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "photo_id": {
+                            "type": "integer",
+                            "description": "ID фото, которое нужно сделать главным"
+                        }
+                    },
+                    "required": ["photo_id"]
+                }
             }
         }
     },
-    examples=[
-        OpenApiExample(
-            name="Пример запроса с новыми фото",
-            description="Загрузка 2 новых фото и удаление фото с ID 1 и 3",
-            value={
-                "photos": ["файл1.jpg", "файл2.jpg"],
-                "delete_photo_ids": "1,3",
-                "description": "Новое описание профиля",
-                "age": 25
-            },
-            request_only=True,
-            media_type='multipart/form-data'
+    responses={
+        200: MainPhotoResponseSerializer,
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Неверные данные или ошибка валидации",
+            examples=[
+                OpenApiExample(
+                    name="Ошибка: photo_id не указан",
+                    value={"error": "Не указан photo_id"},
+                ),
+                OpenApiExample(
+                    name="Ошибка: неверный формат",
+                    value={"error": "photo_id должен быть числом"},
+                ),
+            ],
         ),
-    ]
-)
-
-user_profile_put_schema = extend_schema(
-    summary="Полностью обновить анкету",
-    description=(
-        "Полное обновление анкеты пользователя. Все поля будут перезаписаны. "
-        "Поддерживает загрузку новых фото и удаление существующих через multipart/form-data.\n\n"
-        "Параметры аналогичные PATCH, но требуются все обязательные поля анкеты."
-    ),
-    request={
-        'multipart/form-data': {
-            'type': 'object',
-            'properties': {
-                'photos': {
-                    'type': 'array',
-                    'items': {'type': 'string', 'format': 'binary'},
-                    'description': 'Новые фото для загрузки'
-                },
-                'delete_photo_ids': {
-                    'type': 'string',
-                    'description': 'ID фото для удаления (через запятую)'
-                },
-                # Другие поля анкеты
-                'field_name': {'type': 'string', 'description': 'Все поля анкеты'}
-            }
-        }
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Ресурс не найден",
+            examples=[
+                OpenApiExample(
+                    name="Фото не найдено",
+                    value={"error": "Фото не найдено"},
+                ),
+                OpenApiExample(
+                    name="Профиль не найден",
+                    value={"error": "Профиль не найден"},
+                ),
+                OpenApiExample(
+                    name="Игрок не найден",
+                    value={"error": "Игрок не найден"},
+                ),
+            ],
+        ),
+        500: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Внутренняя ошибка сервера",
+            examples=[
+                OpenApiExample(
+                    name="Ошибка сервера",
+                    value={"error": "Ошибка сервера", "details": "..."},
+                ),
+            ],
+        ),
     }
 )
 
@@ -666,51 +686,7 @@ game_users_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное получение пользователей",
-            examples=[
-                OpenApiExample(
-                    name="Успешный ответ",
-                    value={
-                        "results": [
-                            {
-                                "id": 1,
-                                "tg_id": 123456789,
-                                "first_name": "Мария",
-                                "username": "maria",
-                                "city": "Москва",
-                                "age": 25,
-                                "photos": [
-                                    {
-                                        "id": 1,
-                                        "image": "http://example.com/photo1.jpg",
-                                        "uploaded_at": "2024-01-15T10:30:00Z"
-                                    }
-                                ]
-                            }
-                        ],
-                        "page": 1,
-                        "page_size": 10,
-                        "total_pages": 5
-                    },
-                ),
-                OpenApiExample(
-                    name="Пустой результат",
-                    value={
-                        "results": [],
-                        "page": 1,
-                        "page_size": 10,
-                        "total_count": 0,
-                        "total_pages": 0,
-                        "has_prev": False,
-                        "has_next": False,
-                        "prev_page": None,
-                        "next_page": None
-                    },
-                ),
-            ],
-        ),
+        200: GameUsersResponseSerializer,
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
             description="Неверные данные или ошибка валидации",
@@ -763,10 +739,7 @@ sympathy_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное выполнение операции",
-        ),
+        200: MutualSympathyResponseSerializer,
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
             description="Неверные данные или ошибка валидации",
@@ -808,6 +781,7 @@ sympathy_schema = extend_schema(
     }
 )
 
+
 sympathy_post_schema = extend_schema(
     summary="Поставить симпатию другому пользователю",
     description=(
@@ -825,51 +799,9 @@ sympathy_post_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешная операция",
-            examples=[
-                OpenApiExample(
-                    name="Симпатия создана",
-                    value={
-                        "message": "Симпатия создана",
-                        "sympathy": {
-                            "id": 1,
-                            "from_player": {"tg_id": 123456789, "first_name": "Иван"},
-                            "to_player": {"tg_id": 987654321, "first_name": "Мария"},
-                            "is_mutual": False,
-                            "created_at": "2024-01-15T10:30:00Z"
-                        }
-                    },
-                ),
-                OpenApiExample(
-                    name="Взаимная симпатия",
-                    value={
-                        "message": "Совпадение! Взаимная симпатия",
-                        "sympathy": {
-                            "id": 1,
-                            "from_player": {"tg_id": 987654321, "first_name": "Мария"},
-                            "to_player": {"tg_id": 123456789, "first_name": "Иван"},
-                            "is_mutual": True,
-                            "created_at": "2024-01-15T10:30:00Z"
-                        }
-                    },
-                ),
-                OpenApiExample(
-                    name="Симпатия уже существует",
-                    value={
-                        "message": "Симпатия уже есть",
-                        "sympathy": {
-                            "id": 1,
-                            "from_player": {"tg_id": 123456789, "first_name": "Иван"},
-                            "to_player": {"tg_id": 987654321, "first_name": "Мария"},
-                            "is_mutual": False,
-                            "created_at": "2024-01-15T10:30:00Z"
-                        }
-                    },
-                ),
-            ],
-        ),
+        200: SympathyResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ POST
+        400: OpenApiResponse(...),
+        404: OpenApiResponse(...),
     }
 )
 
@@ -877,37 +809,8 @@ sympathy_get_schema = extend_schema(
     summary="Получить список взаимных симпатий",
     description="Возвращает список всех взаимных симпатий, где текущий пользователь является участником.",
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное получение списка",
-            examples=[
-                OpenApiExample(
-                    name="Список взаимных симпатий",
-                    value={
-                        "mutual": [
-                            {
-                                "id": 1,
-                                "from_player": {"tg_id": 123456789, "first_name": "Иван"},
-                                "to_player": {"tg_id": 987654321, "first_name": "Мария"},
-                                "is_mutual": True,
-                                "created_at": "2024-01-15T10:30:00Z"
-                            },
-                            {
-                                "id": 2,
-                                "from_player": {"tg_id": 555555555, "first_name": "Анна"},
-                                "to_player": {"tg_id": 123456789, "first_name": "Иван"},
-                                "is_mutual": True,
-                                "created_at": "2024-01-14T15:20:00Z"
-                            }
-                        ]
-                    },
-                ),
-                OpenApiExample(
-                    name="Нет взаимных симпатий",
-                    value={"mutual": []},
-                ),
-            ],
-        ),
+        200: MutualSympathyResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ GET
+        400: OpenApiResponse(...),
     }
 )
 
@@ -929,26 +832,8 @@ sympathy_delete_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное удаление",
-            examples=[
-                OpenApiExample(
-                    name="Симпатия удалена",
-                    value={"deleted": True},
-                ),
-            ],
-        ),
-        404: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Симпатия не найдена",
-            examples=[
-                OpenApiExample(
-                    name="Симпатия не существует",
-                    value={"deleted": False, "message": "Симпатия не найдена"},
-                ),
-            ],
-        ),
+        200: DeleteSympathyResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ DELETE
+        404: OpenApiResponse(...),
     }
 )
 
@@ -982,10 +867,7 @@ favorite_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное выполнение операции",
-        ),
+        200: FavoriteListResponseSerializer,
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
             description="Неверные данные или ошибка валидации",
@@ -1039,36 +921,9 @@ favorite_post_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное добавление",
-            examples=[
-                OpenApiExample(
-                    name="Пользователь добавлен",
-                    value={
-                        "created": True,
-                        "favorite": {
-                            "id": 1,
-                            "owner": {"tg_id": 123456789, "first_name": "Иван"},
-                            "target": {"tg_id": 987654321, "first_name": "Мария"},
-                            "created_at": "2024-01-15T10:30:00Z"
-                        }
-                    },
-                ),
-                OpenApiExample(
-                    name="Пользователь уже в избранном",
-                    value={
-                        "created": False,
-                        "favorite": {
-                            "id": 1,
-                            "owner": {"tg_id": 123456789, "first_name": "Иван"},
-                            "target": {"tg_id": 987654321, "first_name": "Мария"},
-                            "created_at": "2024-01-15T10:30:00Z"
-                        }
-                    },
-                ),
-            ],
-        ),
+        200: FavoriteResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ POST
+        400: OpenApiResponse(...),
+        404: OpenApiResponse(...),
     }
 )
 
@@ -1076,48 +931,8 @@ favorite_get_schema = extend_schema(
     summary="Получить список избранных пользователей",
     description="Возвращает список всех пользователей, добавленных в избранное.",
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное получение списка",
-            examples=[
-                OpenApiExample(
-                    name="Список избранных",
-                    value={
-                        "results": [
-                            {
-                                "id": 1,
-                                "created_at": "2024-01-15T10:30:00Z",
-                                "target": {
-                                    "tg_id": 987654321,
-                                    "first_name": "Мария",
-                                    "username": "maria",
-                                    "language_code": "ru",
-                                    "gender": "Woman",
-                                    "city": "Москва"
-                                }
-                            },
-                            {
-                                "id": 2,
-                                "created_at": "2024-01-14T15:20:00Z",
-                                "target": {
-                                    "tg_id": 555555555,
-                                    "first_name": "Анна",
-                                    "username": "anna",
-                                    "language_code": "ru",
-                                    "gender": "Woman",
-                                    "city": "Санкт-Петербург"
-                                }
-                            }
-                        ],
-                        "count": 2
-                    },
-                ),
-                OpenApiExample(
-                    name="Пустой список",
-                    value={"results": [], "count": 0},
-                ),
-            ],
-        ),
+        200: FavoriteListResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ GET
+        400: OpenApiResponse(...),
     }
 )
 
@@ -1137,20 +952,9 @@ favorite_delete_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное удаление",
-            examples=[
-                OpenApiExample(
-                    name="Пользователь удален",
-                    value={"deleted": True},
-                ),
-                OpenApiExample(
-                    name="Пользователь не был в избранном",
-                    value={"deleted": False},
-                ),
-            ],
-        ),
+        200: DeleteFavoriteResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ DELETE
+        400: OpenApiResponse(...),
+        404: OpenApiResponse(...),
     }
 )
 
@@ -1184,9 +988,13 @@ profile_detail_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Успешное получение анкеты",
+        200: PolymorphicProxySerializer(
+            component_name='ProfileDetailResponse',
+            serializers=[
+                FullProfileManSerializer,
+                FullProfileWomanSerializer,
+            ],
+            resource_type_field_name=None,
         ),
         400: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
@@ -1233,134 +1041,119 @@ profile_detail_schema = extend_schema(
     }
 )
 
-profile_detail_get_schema = extend_schema(
-    summary="Получить анкету пользователя по tg_id",
-    description=(
-        "Возвращает полную анкету пользователя с фотографиями, счетчиками лайков/дизлайков "
-        "и реакциями текущего пользователя на каждое фото.\n\n"
-        "Параметры:\n"
-        "- tg_id: Telegram ID пользователя, анкету которого нужно просмотреть"
-    ),
-    request=OpenApiTypes.OBJECT,
-    examples=[
-        OpenApiExample(
-            name="Запрос анкеты пользователя",
-            value={"tg_id": 987654321},
-            request_only=True
-        ),
+
+
+event_get_schema = extend_schema(
+    tags=["Ивенты"],
+    summary="Получить все ивенты текущего пользователя или один по ID",
+    description="Возвращает один ивент если указан event_id, иначе список всех активных ивентов пользователя",
+    parameters=[
+        OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=False),
+        OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
+        OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
     ],
     responses={
-        200: OpenApiResponse(
+        200: EventSerializer(many=True),  # для списка
+        404: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
-            description="Успешное получение анкеты",
+            description="Ивент или игрок не найден",
+        ),
+    }
+)
+
+
+
+event_post_schema = extend_schema(
+    tags=["Ивенты"],
+    summary="Создать новый ивент",
+    description="Создает новый ивент текущего пользователя",
+    parameters=[
+        OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
+        OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
+    ],
+    request=EventSerializer,
+    responses={200: EventSerializer}
+)
+
+event_patch_schema = extend_schema(
+    tags=["Ивенты"],
+    summary="Обновить существующий ивент (частично)",
+    parameters=[
+        OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=True),
+        OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
+        OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
+    ],
+    request=EventSerializer,
+    responses={200: EventSerializer}
+)
+
+event_delete_schema = extend_schema(
+    tags=["Ивенты"],
+    summary="Удалить ивент",
+    parameters=[
+        OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=True),
+        OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
+        OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
+    ],
+    responses={200: OpenApiResponse(response=OpenApiTypes.OBJECT)}
+)
+
+
+
+opposite_gender_events_get_schema = extend_schema(
+    tags=["Ивенты"],
+    summary="Получить ивенты противоположного пола с фильтрами",
+    description=(
+        "Возвращает список активных ивентов противоположного пола текущего пользователя.\n\n"
+        "Можно передать фильтры:\n"
+        "- city — фильтр по городу\n"
+        "- min_age — минимальный возраст участников\n"
+        "- max_age — максимальный возраст участников\n"
+        "- page — номер страницы пагинации\n\n"
+        "Если передан event_id — возвращается один конкретный ивент."
+    ),
+    parameters=[
+        OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=False),
+        OpenApiParameter("city", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("min_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("max_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
+        OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
+    ],
+    responses={
+        200: EventSerializer(many=True),
+        401: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Пользователь не авторизован",
             examples=[
                 OpenApiExample(
-                    name="Мужская анкета",
-                    value={
-                        "id": 1,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 987654321,
-                            "first_name": "Алексей",
-                            "username": "alex",
-                            "language_code": "ru",
-                            "gender": "Man",
-                            "city": "Москва",
-                            "hide_age_in_profile": False,
-                            "is_active": True
-                        },
-                        "birth_date": "1994-05-20",
-                        "description": "Люблю активный отдых, спорт и путешествия",
-                        "height": 185,
-                        "weight": 80,
-                        "body_type": "athletic",
-                        "eye_color": "brown",
-                        "hair_color": "dark",
-                        "has_children": "no",
-                        "want_children": "yes",
-                        "smoking": "never",
-                        "alcohol": "socially",
-                        "religion": "orthodox",
-                        "education": "higher",
-                        "profession": "Software Engineer",
-                        "hobbies": ["спорт", "путешествия", "чтение"],
-                        "relationship_goal": "serious",
-                        "communication_style": "direct",
-                        "photos": [
-                            {
-                                "id": 1,
-                                "image": "http://example.com/photo1.jpg",
-                                "likes_count": 8,
-                                "dislikes_count": 2,
-                                "user_reactions": [{"reaction_type": "like"}],
-                                "uploaded_at": "2024-01-15T10:30:00Z"
-                            },
-                            {
-                                "id": 2,
-                                "image": "http://example.com/photo2.jpg",
-                                "likes_count": 12,
-                                "dislikes_count": 1,
-                                "user_reactions": [],
-                                "uploaded_at": "2024-01-16T14:20:00Z"
-                            }
-                        ],
-                        "created_at": "2024-01-10T09:15:00Z",
-                        "updated_at": "2024-01-20T16:45:00Z"
-                    },
+                    name="Не авторизован",
+                    value={"error": "Не авторизован"}
+                ),
+            ],
+        ),
+        404: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Ресурс не найден",
+            examples=[
+                OpenApiExample(
+                    name="Игрок не найден",
+                    value={"error": "Пользователь не найден"}
                 ),
                 OpenApiExample(
-                    name="Женская анкета",
-                    value={
-                        "id": 1,
-                        "player": {
-                            "id": 1,
-                            "tg_id": 987654321,
-                            "first_name": "Екатерина",
-                            "username": "kate",
-                            "language_code": "ru",
-                            "gender": "Woman",
-                            "city": "Санкт-Петербург",
-                            "hide_age_in_profile": True,
-                            "is_active": True
-                        },
-                        "birth_date": "1996-08-12",
-                        "description": "Увлекаюсь искусством, фотографией и путешествиями",
-                        "height": 170,
-                        "weight": 55,
-                        "body_type": "slim",
-                        "eye_color": "green",
-                        "hair_color": "blonde",
-                        "has_children": "no",
-                        "want_children": "maybe",
-                        "smoking": "never",
-                        "alcohol": "rarely",
-                        "religion": "not_religious",
-                        "education": "higher",
-                        "profession": "Designer",
-                        "hobbies": ["искусство", "фотография", "йога"],
-                        "relationship_goal": "friendship",
-                        "communication_style": "emotional",
-                        "photos": [
-                            {
-                                "id": 1,
-                                "image": "http://example.com/photo1.jpg",
-                                "likes_count": 15,
-                                "dislikes_count": 3,
-                                "user_reactions": [{"reaction_type": "dislike"}],
-                                "uploaded_at": "2024-01-15T10:30:00Z"
-                            },
-                            {
-                                "id": 2,
-                                "image": "http://example.com/photo2.jpg",
-                                "likes_count": 20,
-                                "dislikes_count": 2,
-                                "user_reactions": [{"reaction_type": "like"}],
-                                "uploaded_at": "2024-01-18T11:45:00Z"
-                            }
-                        ],
-                        "created_at": "2024-01-12T11:30:00Z",
-                        "updated_at": "2024-01-22T13:20:00Z"
-                    },
+                    name="Ивент не найден",
+                    value={"error": "Ивент не найден"}
+                ),
+            ],
+        ),
+        500: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Внутренняя ошибка сервера",
+            examples=[
+                OpenApiExample(
+                    name="Ошибка сервера",
+                    value={"error": "Internal server error"}
                 ),
             ],
         ),
@@ -1368,4 +1161,42 @@ profile_detail_get_schema = extend_schema(
 )
 
 
+reaction_to_the_questionnaire = extend_schema(
+    tags=["Игрок"],
+    summary="Лайк или дизлайк пользователя",
+    description=(
+        "Позволяет поставить или убрать лайк/дизлайк другому игроку.\n\n"
+        "⚠️ Требуется заголовок `X-Init-Data` (init_data от Telegram WebApp)."
+    ),
+    request=UserLikeRequestSerializer,
+    responses={
+        200: UserLikeResponseSerializer,
+        400: OpenApiResponse(
+            response=UserLikeResponseSerializer,
+            description="Неверные данные или ошибка валидации"
+        ),
+        404: OpenApiResponse(
+            description="Игрок не найден"
+        ),
+    }
+)
 
+
+yookassa = extend_schema(
+    tags=["Юкасса"],
+    summary="Создать платёж YooKassa",
+    description=(
+        "Возвращает ссылку на оплату подписки/пакета рецептов.\n\n"
+        "В теле запроса обязательно прокидывать:\n"
+        "- `product_id` — id продукта для оплаты\n"
+        "- `return_url` — url для редиректа после оплаты\n"
+        "- `init_data` — данные инициализации (telegram_user)\n"
+    ),
+    request=CreatePaymentRequestSerializer,
+    responses={
+        200: CreatePaymentResponseSerializer,
+        404: ErrorResponseSerializer,
+        400: ErrorResponseSerializer,
+        500: ErrorResponseSerializer,
+    }
+)

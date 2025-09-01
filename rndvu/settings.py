@@ -18,6 +18,10 @@ from corsheaders.defaults import default_headers, default_methods
 
 load_dotenv()
 
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+YOOKASSA_WEBHOOK_URL = os.getenv("YOOKASSA_WEBHOOK_URL")
+
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 
@@ -171,10 +175,10 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = "Europe/Moscow"
 CELERY_BEAT_SCHEDULE = {
-    # "free_attempts": {
-    #     "task": "core_rndvu.tasks.name_tasks",
-    #     "schedule": crontab(0, 0),  # Каждый день в 00:00 запускаем задачу
-    # },
+    "subscription_days_daily": {
+        "task": "core_rndvu.tasks.decrement_subscription_days_daily",
+        "schedule": crontab(0, 0),  # Каждый день в 00:00 обновляем поле subscription_days_daily
+    },
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -32,10 +32,16 @@ class WomanPhotoAdmin(admin.ModelAdmin):
     list_display = [field.name for field in WomanPhoto._meta.fields]
 
 
-@admin.register(PhotoReaction)
-class PhotoReactionAdmin(admin.ModelAdmin):
-    """Регистрация в админ панели модели PhotoReaction."""
-    list_display = [field.name for field in PhotoReaction._meta.fields]
+@admin.register(UserReactionDislike)
+class UserReactionDislikeAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели UserReactionDislike."""
+    list_display = [field.name for field in UserReactionDislike._meta.fields]
+
+
+# @admin.register(PhotoReaction)
+# class PhotoReactionAdmin(admin.ModelAdmin):
+#     """Регистрация в админ панели модели PhotoReaction."""
+#     list_display = [field.name for field in PhotoReaction._meta.fields]
 
 
 @admin.register(Sympathy)
@@ -48,3 +54,21 @@ class SympathyAdmin(admin.ModelAdmin):
 class FavoriteAdmin(admin.ModelAdmin):
     """Регистрация в админ панели модели Favorite."""
     list_display = [field.name for field in Favorite._meta.fields]
+
+
+@admin.register(Event)
+class EventAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели Event."""
+    list_display = [field.name for field in Event._meta.fields]
+
+
+@admin.register(Purchase)
+class PurchaseAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели Purchase."""
+    list_display = [field.name for field in Purchase._meta.fields]
+
+
+@admin.register(Product)
+class ProductAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели Product."""
+    list_display = [field.name for field in Product._meta.fields]

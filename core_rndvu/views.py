@@ -1,3 +1,4 @@
+import json
 import math
 from adrf.views import APIView
 from django.db.models import Prefetch, Count, Q, F, Case, When, DateField
@@ -10,6 +11,8 @@ from rest_framework.response import Response
 from core_rndvu.models import *
 from core_rndvu.schemas import *
 from core_rndvu.serializers import *
+from core_rndvu.yookassa_webhook import create_yookassa_payment
+
 
 def availability_init_data(request):
     """Функция проверяющая наличие init_data"""
@@ -85,7 +88,7 @@ class UserProfileView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     async def get(self, request):
-        """Получить анкету пользователя с фото, счётчиками и реакцией текущего пользователя"""
+        """Получить анкету пользователя с фото (без лайков/дизлайков на фото)"""
         init_data = availability_init_data(request)
         try:
             # Получаем игрока по tg_id
@@ -94,60 +97,21 @@ class UserProfileView(APIView):
                 return Response({"error": "Пол пользователя не указан"}, status=status.HTTP_400_BAD_REQUEST)
 
             if player.gender == "Man":
-                # Подготавливаем QS реакций ТЕКУЩЕГО пользователя ТОЛЬКО на мужские фото:
-                my_reactions = PhotoReaction.objects.filter(
-                    player=player, man_photo__isnull=False
-                ).only("id", "reaction_type", "man_photo_id")
-
-                # [БД #3] QS фото с аннотациями:
-                #  - likes_count: количество связанных реакций с типом "like"
-                #  - dislikes_count: количество связанных реакций с типом "dislike"
-                # При сериализации эти поля читаются как атрибуты, ДОП. запросов нет.
-                # Дополнительно префетчим ТОЛЬКО реакции текущего игрока в to_attr="user_reactions":
-                #   Prefetch("reactions", queryset=my_reactions, to_attr="user_reactions")
-                # Это положит СПИСОК реакций данного пользователя на КАЖДОЕ фото (обычно 0 или 1 элемент).
-                man_photos_qs = (
-                    ManPhoto.objects
-                    .annotate(
-                        likes_count=Count("reactions", filter=Q(reactions__reaction_type="like")),
-                        dislikes_count=Count("reactions", filter=Q(reactions__reaction_type="dislike")),
-                    )
-                    .prefetch_related(
-                        Prefetch("reactions", queryset=my_reactions, to_attr="user_reactions")
-                    )
-                )
-                # Получаем профиль мужчины с:
-                # - JOIN на player (select_related) — чтобы не было ленивой догрузки
-                # - PREFETCH photo queryset (man_photos_qs) — одним доп. запросом притянет все фото профиля
+                # Просто подтягиваем фото без аннотаций реакций
                 profile = await (
                     ProfileMan.objects
                     .select_related("player")
-                    .prefetch_related(Prefetch("photos", queryset=man_photos_qs))
+                    .prefetch_related("photos")
                 ).aget(player=player)
 
                 serializer = FullProfileManSerializer(profile, context={"request": request})
 
             else:
-                # QS реакций ТЕКУЩЕГО пользователя ТОЛЬКО на женские фото
-                my_reactions = PhotoReaction.objects.filter(
-                    player=player, woman_photo__isnull=False
-                ).only("id", "reaction_type", "woman_photo_id")
-                # QS фото женщин + аннотации лайков/дизлайков + префетч реакций текущего пользователя
-                woman_photos_qs = (
-                    WomanPhoto.objects
-                    .annotate(
-                        likes_count=Count("reactions", filter=Q(reactions__reaction_type="like")),
-                        dislikes_count=Count("reactions", filter=Q(reactions__reaction_type="dislike")),
-                    )
-                    .prefetch_related(
-                        Prefetch("reactions", queryset=my_reactions, to_attr="user_reactions")
-                    )
-                )
-                # Получаем профиль женщины с JOIN player и PREFETCH фото
+                # Просто подтягиваем фото без аннотаций реакций
                 profile = await (
                     ProfileWoman.objects
                     .select_related("player")
-                    .prefetch_related(Prefetch("photos", queryset=woman_photos_qs))
+                    .prefetch_related("photos")
                 ).aget(player=player)
 
                 serializer = FullProfileWomanSerializer(profile, context={"request": request})
@@ -177,7 +141,7 @@ class UserProfileView(APIView):
           3) Обработать файлы:
              - загрузить новые (form-data key: photos / photos[])
              - удалить выбранные (form-data key: delete_photo_ids = "1,3,5" или несколько отдельных ключей)
-          4) Перечитать профиль с аннотациями лайков/дизлайков и реакциями текущего пользователя (как в GET) и вернуть.
+          4) Перечитать профиль с фото (без лайков/дизлайков) и вернуть.
         """
         init_data = availability_init_data(request)
         try:
@@ -246,52 +210,20 @@ class UserProfileView(APIView):
                 if delete_ids:
                     await WomanPhoto.objects.filter(profile=profile, id__in=delete_ids).adelete()
 
-            # 4) Рефетчим профиль для ответа (с лайками/дизлайками и реакцией текущего пользователя)
+            # 4) Рефетчим профиль для ответа (без лайков/дизлайков)
             if is_man:
-                # Реакции текущего пользователя на мужские фото
-                my_reactions = PhotoReaction.objects.filter(
-                    player=player, man_photo__isnull=False
-                ).only("id", "reaction_type", "man_photo_id")
-                # Фото c аннотациями и префетчем user_reactions
-                man_photos_qs = (
-                    ManPhoto.objects
-                    .annotate(
-                        likes_count=Count("reactions", filter=Q(reactions__reaction_type="like")),
-                        dislikes_count=Count("reactions", filter=Q(reactions__reaction_type="dislike")),
-                    )
-                    .prefetch_related(
-                        Prefetch("reactions", queryset=my_reactions, to_attr="user_reactions")
-                    )
-                )
-                # Профиль мужчины с JOIN player + PREFETCH фото
                 profile_refetched = await (
                     ProfileMan.objects
                     .select_related("player")
-                    .prefetch_related(Prefetch("photos", queryset=man_photos_qs))
+                    .prefetch_related("photos")
                 ).aget(pk=profile.pk)
 
                 full = FullProfileManSerializer(profile_refetched, context={"request": request})
             else:
-                # Реакции текущего пользователя на женские фото
-                my_reactions = PhotoReaction.objects.filter(
-                    player=player, woman_photo__isnull=False
-                ).only("id", "reaction_type", "woman_photo_id")
-                # Фото женщин с аннотациями и префетчем user_reactions
-                woman_photos_qs = (
-                    WomanPhoto.objects
-                    .annotate(
-                        likes_count=Count("reactions", filter=Q(reactions__reaction_type="like")),
-                        dislikes_count=Count("reactions", filter=Q(reactions__reaction_type="dislike")),
-                    )
-                    .prefetch_related(
-                        Prefetch("reactions", queryset=my_reactions, to_attr="user_reactions")
-                    )
-                )
-                # Профиль женщины с JOIN player + PREFETCH фото
                 profile_refetched = await (
                     ProfileWoman.objects
                     .select_related("player")
-                    .prefetch_related(Prefetch("photos", queryset=woman_photos_qs))
+                    .prefetch_related("photos")
                 ).aget(pk=profile.pk)
 
                 full = FullProfileWomanSerializer(profile_refetched, context={"request": request})
@@ -306,74 +238,10 @@ class UserProfileView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@photo_reaction_schema
-@extend_schema_view(post=photo_reaction_post_schema, delete=photo_reaction_delete_schema)
-class PhotoReactionView(APIView):
-    """Ручка для работы с реакциями на фото (лайки/дизлайки)"""
+@user_main_photo_schema
+class UserMainPhotoView(APIView):
+    """Выбор главного фото у пользователя в анкете"""
     async def post(self, request):
-        """Поставить или изменить реакцию на фото"""
-        # Проверяем авторизацию через Telegram
-        init_data = availability_init_data(request)
-        try:
-            # Получаем пользователя
-            player = await Player.objects.aget(tg_id=init_data["id"])
-            # Получаем данные от фронта
-            man_photo_id = request.data.get("photo_id")
-            woman_photo_id = request.data.get("woman_photo_id")
-            reaction_type = request.data.get("reaction_type")
-            # Валидация
-            if not reaction_type or reaction_type not in ['like', 'dislike']:
-                return Response({"error": "Параметр reaction_type обязателен и должен быть 'like' или 'dislike'"}, 
-                              status=status.HTTP_400_BAD_REQUEST)
-            if not man_photo_id and not woman_photo_id:
-                return Response({"error": "Должно быть указано одно фото (photo_id или woman_photo_id)"}, 
-                              status=status.HTTP_400_BAD_REQUEST)
-            if man_photo_id and woman_photo_id:
-                return Response({"error": "Нельзя указать и мужское, и женское фото одновременно"}, 
-                              status=status.HTTP_400_BAD_REQUEST)
-            # Проверяем существование фото
-            if man_photo_id:
-                try:
-                    photo = await ManPhoto.objects.aget(id=man_photo_id)
-                except ManPhoto.DoesNotExist:
-                    return Response({"error": "Мужское фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
-            else:
-                try:
-                    photo = await WomanPhoto.objects.aget(id=woman_photo_id)
-                except WomanPhoto.DoesNotExist:
-                    return Response({"error": "Женское фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
-            # Проверяем, существует ли уже реакция от этого пользователя
-            try:
-                if man_photo_id:
-                    existing_reaction = await PhotoReaction.objects.aget(player=player, man_photo=photo)
-                else:
-                    existing_reaction = await PhotoReaction.objects.aget(player=player, woman_photo=photo)
-                # Если реакция уже существует, обновляем её
-                if existing_reaction.reaction_type == reaction_type:
-                    return Response({"message": "Такая реакция уже поставлена", "reaction": reaction_type}, 
-                                  status=status.HTTP_200_OK)
-                else:
-                    # Изменяем тип реакции
-                    existing_reaction.reaction_type = reaction_type
-                    await existing_reaction.asave(update_fields=['reaction_type'])
-                    message = "Реакция изменена"
-            except PhotoReaction.DoesNotExist:
-                # Создаем новую реакцию
-                if man_photo_id:
-                    reaction = PhotoReaction(player=player, man_photo=photo, reaction_type=reaction_type)
-                else:
-                    reaction = PhotoReaction(player=player, woman_photo=photo, reaction_type=reaction_type)
-                await reaction.asave()
-                message = "Реакция поставлена"
-            # Возвращаем результат
-            return Response({"message": message, "reaction_type": reaction_type,
-                            "photo_id": man_photo_id or woman_photo_id, "photo_type": "man" if man_photo_id else "woman"},
-                            status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
-    async def delete(self, request):
-        """Убрать реакцию с фото"""
         # Проверяем авторизацию через Telegram
         init_data = availability_init_data(request)
         try:
@@ -381,30 +249,135 @@ class PhotoReactionView(APIView):
             player = await Player.objects.aget(tg_id=init_data["id"])
             # Получаем данные от фронта
             photo_id = request.data.get("photo_id")
-            woman_photo_id = request.data.get("woman_photo_id")
-            # Валидация
-            if not photo_id and not woman_photo_id:
-                return Response({"error": "Должно быть указано одно фото (photo_id или woman_photo_id)"}, 
-                              status=status.HTTP_400_BAD_REQUEST)
-            if photo_id and woman_photo_id:
-                return Response({"error": "Нельзя указать и мужское, и женское фото одновременно"}, 
-                              status=status.HTTP_400_BAD_REQUEST)
-            # Удаляем реакцию
-            try:
-                if photo_id:
-                    reaction = await PhotoReaction.objects.aget(player=player, man_photo_id=photo_id)
-                else:
-                    reaction = await PhotoReaction.objects.aget(player=player, woman_photo_id=woman_photo_id)
-                await reaction.adelete()
-                return Response({
-                    "message": "Реакция убрана",
-                    "photo_id": photo_id or woman_photo_id,
-                    "photo_type": "man" if photo_id else "woman"
-                }, status=status.HTTP_200_OK)
-            except PhotoReaction.DoesNotExist:
-                return Response({"message": "Реакция не найдена"}, status=status.HTTP_404_NOT_FOUND)
+            if not photo_id:
+                return Response({"error": "Не указан photo_id"}, status=status.HTTP_400_BAD_REQUEST)
+            if player.gender == "Man":
+                profile_man = await ProfileMan.objects.aget(player=player)
+                try:
+                    photo = await ManPhoto.objects.aget(id=photo_id, profile=profile_man)
+                    # Сначала снимаем флаг со всех фото
+                    await ManPhoto.objects.filter(profile=profile_man).aupdate(main_photo=False)
+                    # Затем ставим флаг на выбранное фото
+                    photo.main_photo = True
+                    await photo.asave(update_fields=["main_photo"])
+                    return Response({"message": "Главное фото обновлено", "main_photo_id": photo.id})
+                except ManPhoto.DoesNotExist:
+                    return Response({"error": "Фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                profile_woman = await ProfileWoman.objects.aget(player=player)
+                try:
+                    photo = await WomanPhoto.objects.aget(id=photo_id, profile=profile_woman)
+                    # Сначала снимаем флаг со всех фото
+                    await WomanPhoto.objects.filter(profile=profile_woman).aupdate(main_photo=False)
+                    # Затем ставим флаг на выбранное фото
+                    photo.main_photo = True
+                    await photo.asave(update_fields=["main_photo"])
+                    return Response({"message": "Главное фото обновлено", "main_photo_id": photo.id})
+                except WomanPhoto.DoesNotExist:
+                    return Response({"error": "Фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Ошибка сервера", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# @photo_reaction_schema
+# @extend_schema_view(post=photo_reaction_post_schema, delete=photo_reaction_delete_schema)
+# class PhotoReactionView(APIView):
+#     """Ручка для работы с реакциями на фото (лайки/дизлайки)"""
+#     async def post(self, request):
+#         """Поставить или изменить реакцию на фото"""
+#         # Проверяем авторизацию через Telegram
+#         init_data = availability_init_data(request)
+#         try:
+#             # Получаем пользователя
+#             player = await Player.objects.aget(tg_id=init_data["id"])
+#             # Получаем данные от фронта
+#             man_photo_id = request.data.get("photo_id")
+#             woman_photo_id = request.data.get("woman_photo_id")
+#             reaction_type = request.data.get("reaction_type")
+#             # Валидация
+#             if not reaction_type or reaction_type not in ['like', 'dislike']:
+#                 return Response({"error": "Параметр reaction_type обязателен и должен быть 'like' или 'dislike'"},
+#                               status=status.HTTP_400_BAD_REQUEST)
+#             if not man_photo_id and not woman_photo_id:
+#                 return Response({"error": "Должно быть указано одно фото (photo_id или woman_photo_id)"},
+#                               status=status.HTTP_400_BAD_REQUEST)
+#             if man_photo_id and woman_photo_id:
+#                 return Response({"error": "Нельзя указать и мужское, и женское фото одновременно"},
+#                               status=status.HTTP_400_BAD_REQUEST)
+#             # Проверяем существование фото
+#             if man_photo_id:
+#                 try:
+#                     photo = await ManPhoto.objects.aget(id=man_photo_id)
+#                 except ManPhoto.DoesNotExist:
+#                     return Response({"error": "Мужское фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
+#             else:
+#                 try:
+#                     photo = await WomanPhoto.objects.aget(id=woman_photo_id)
+#                 except WomanPhoto.DoesNotExist:
+#                     return Response({"error": "Женское фото не найдено"}, status=status.HTTP_404_NOT_FOUND)
+#             # Проверяем, существует ли уже реакция от этого пользователя
+#             try:
+#                 if man_photo_id:
+#                     existing_reaction = await PhotoReaction.objects.aget(player=player, man_photo=photo)
+#                 else:
+#                     existing_reaction = await PhotoReaction.objects.aget(player=player, woman_photo=photo)
+#                 # Если реакция уже существует, обновляем её
+#                 if existing_reaction.reaction_type == reaction_type:
+#                     return Response({"message": "Такая реакция уже поставлена", "reaction": reaction_type},
+#                                   status=status.HTTP_200_OK)
+#                 else:
+#                     # Изменяем тип реакции
+#                     existing_reaction.reaction_type = reaction_type
+#                     await existing_reaction.asave(update_fields=['reaction_type'])
+#                     message = "Реакция изменена"
+#             except PhotoReaction.DoesNotExist:
+#                 # Создаем новую реакцию
+#                 if man_photo_id:
+#                     reaction = PhotoReaction(player=player, man_photo=photo, reaction_type=reaction_type)
+#                 else:
+#                     reaction = PhotoReaction(player=player, woman_photo=photo, reaction_type=reaction_type)
+#                 await reaction.asave()
+#                 message = "Реакция поставлена"
+#             # Возвращаем результат
+#             return Response({"message": message, "reaction_type": reaction_type,
+#                             "photo_id": man_photo_id or woman_photo_id, "photo_type": "man" if man_photo_id else "woman"},
+#                             status=status.HTTP_200_OK)
+#         except Exception as e:
+#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+#
+#     async def delete(self, request):
+#         """Убрать реакцию с фото"""
+#         # Проверяем авторизацию через Telegram
+#         init_data = availability_init_data(request)
+#         try:
+#             # Получаем пользователя
+#             player = await Player.objects.aget(tg_id=init_data["id"])
+#             # Получаем данные от фронта
+#             photo_id = request.data.get("photo_id")
+#             woman_photo_id = request.data.get("woman_photo_id")
+#             # Валидация
+#             if not photo_id and not woman_photo_id:
+#                 return Response({"error": "Должно быть указано одно фото (photo_id или woman_photo_id)"},
+#                               status=status.HTTP_400_BAD_REQUEST)
+#             if photo_id and woman_photo_id:
+#                 return Response({"error": "Нельзя указать и мужское, и женское фото одновременно"},
+#                               status=status.HTTP_400_BAD_REQUEST)
+#             # Удаляем реакцию
+#             try:
+#                 if photo_id:
+#                     reaction = await PhotoReaction.objects.aget(player=player, man_photo_id=photo_id)
+#                 else:
+#                     reaction = await PhotoReaction.objects.aget(player=player, woman_photo_id=woman_photo_id)
+#                 await reaction.adelete()
+#                 return Response({
+#                     "message": "Реакция убрана",
+#                     "photo_id": photo_id or woman_photo_id,
+#                     "photo_type": "man" if photo_id else "woman"
+#                 }, status=status.HTTP_200_OK)
+#             except PhotoReaction.DoesNotExist:
+#                 return Response({"message": "Реакция не найдена"}, status=status.HTTP_404_NOT_FOUND)
+#         except Exception as e:
+#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @game_users_schema
@@ -463,11 +436,11 @@ class GameUsersView(APIView):
             if opposite_gender == "Man":
                 # Мужские фото: select_related чтобы иметь сам профиль, и префетч фото
                 qs = qs.select_related("man_profile").prefetch_related(
-                    Prefetch("man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at")))
+                    Prefetch("man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")))
             else:
                 # Женские фото select_related чтобы иметь сам профиль, и префетч фото
                 qs = qs.select_related("woman_profile").prefetch_related(
-                    Prefetch("woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at")))
+                    Prefetch("woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")))
 
             # Рандомная выдача
             qs = qs.order_by("?")
@@ -493,8 +466,17 @@ class GameUsersView(APIView):
             for u in users:
                 u.birth_date = getattr(u, "birth_date_any", None)
             data = GameUserSerializer(users, many=True).data
-            return Response({"results": data, "page": page, "page_size": page_size, "total_pages": total_pages},
-                            status=status.HTTP_200_OK)
+            return Response({
+                "results": data,
+                "page": page,
+                "page_size": page_size,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "has_prev": page > 1,
+                "has_next": page < total_pages,
+                "prev_page": page - 1 if page > 1 else None,
+                "next_page": page + 1 if page < total_pages else None
+            }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -631,34 +613,7 @@ class SympathyView(APIView):
 @favorite_schema
 @extend_schema_view(post=favorite_post_schema, get=favorite_get_schema, delete=favorite_delete_schema)
 class FavoriteView(APIView):
-    """Избранное: POST добавить, GET показать список, DELETE удалить"""
-    async def post(self, request):
-        # Проверяем авторизацию через Telegram
-        init_data = availability_init_data(request)
-        try:
-            # Получаем пользователя
-            player = await Player.objects.aget(tg_id=init_data["id"])
-            # Получаем пользователя для добавления в избранные
-            tg_id = request.data.get("tg_id")
-            if not tg_id:
-                return Response({"error": "Укажите tg_id (добавляем в избранное пользователя)"}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                target = await Player.objects.aget(tg_id=tg_id)
-                if target.id == player.id:
-                    return Response({"error": "Нельзя добавить себя в избранное"},
-                                    status=status.HTTP_400_BAD_REQUEST)
-            except Player.DoesNotExist:
-                return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
-            obj, created = await Favorite.objects.aget_or_create(owner=player, target=target)
-            if not created:
-                # прикрепляем, чтобы сериализатор не лез в БД, мы уже достали из init data player и человека для симпатии recipient
-                obj.owner = player
-                obj.target = target
-            data = FavoriteSerializer(obj).data
-            return Response({"created": created, "favorite": data}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
+    """Избранное: GET показать список, DELETE удалить"""
     async def get(self, request):
         # Проверяем авторизацию через Telegram
         init_data = availability_init_data(request)
@@ -700,7 +655,7 @@ class FavoriteView(APIView):
 class ProfileDetailView(APIView):
     """
     GET: Посмотреть анкету другого пользователя по tg_id.
-    Возвращает профиль (м/ж) + фото с лайками/дизлайками + реакцию ТЕКУЩЕГО пользователя на каждое фото.
+    Возвращает профиль (м/ж) + фото (без лайков/дизлайков на фото).
     """
     async def get(self, request):
         # Проверяем авторизацию через Telegram
@@ -722,39 +677,365 @@ class ProfileDetailView(APIView):
         if not target.gender:
             return Response({"error": "У пользователя не указан пол"}, status=status.HTTP_400_BAD_REQUEST)
         if target.gender == "Man":
-            # QS реакций ТЕКУЩЕГО игрока на фото МУЖЧИН (нужен для user_reactions)
-            my_reactions_qs = (PhotoReaction.objects.filter(player=player, man_photo__isnull=False)
-                               .only("id", "reaction_type", "man_photo_id"))
-            # QS фото мужчины:
-            #   + аннотация лайков/дизлайков через Count
-            #   + префетч реакций текущего игрока → лягут в атрибут user_reactions
-            man_photos_qs = (ManPhoto.objects.annotate( likes_count=Count("reactions",
-                    filter=Q(reactions__reaction_type="like")), dislikes_count=Count("reactions",
-                    filter=Q(reactions__reaction_type="dislike")),).prefetch_related(
-                    Prefetch("reactions", queryset=my_reactions_qs, to_attr="user_reactions"))
-            )
             try:
-                # профиль мужчины цели + подтянутые фото
+                # профиль мужчины + подтянутые фото (без реакций)
                 profile = await (ProfileMan.objects.select_related("player")
-                                 .prefetch_related(Prefetch("photos", queryset=man_photos_qs))).aget(player=target)
+                                 .prefetch_related("photos")).aget(player=target)
             except ProfileMan.DoesNotExist:
                 return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
             serializer = FullProfileManSerializer(profile, context={"request": request})
         else:
-            # QS реакций ТЕКУЩЕГО игрока на фото ЖЕНЩИН
-            my_reactions_qs = (PhotoReaction.objects.filter(player=player, woman_photo__isnull=False)
-                               .only("id", "reaction_type", "woman_photo_id"))
-            # QS фото женщины с аннотациями лайков/дизлайков + реакциями текущего игрока
-            woman_photos_qs = (WomanPhoto.objects.annotate(likes_count=Count("reactions",
-                    filter=Q(reactions__reaction_type="like")), dislikes_count=Count("reactions",
-                    filter=Q(reactions__reaction_type="dislike")),).prefetch_related(
-                    Prefetch("reactions", queryset=my_reactions_qs, to_attr="user_reactions"))
-            )
             try:
-                # профиль женщины + подтянутые фото
+                # профиль женщины + подтянутые фото (без реакций)
                 profile = await (ProfileWoman.objects.select_related("player")
-                                 .prefetch_related(Prefetch("photos", queryset=woman_photos_qs))).aget(player=target)
+                                 .prefetch_related("photos")).aget(player=target)
             except ProfileWoman.DoesNotExist:
                 return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
             serializer = FullProfileWomanSerializer(profile, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@extend_schema_view(get=event_get_schema, post=event_post_schema, patch=event_patch_schema, delete=event_delete_schema)
+class EventPlayerView(APIView):
+    """CRUD для ивентов - все методы в одной вьюхе"""
+    async def get(self, request, event_id=None):
+        """Получить все ивенты или один конкретный"""
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        try:
+            # Получаем пользователя
+            player = await Player.objects.aget(tg_id=init_data["id"])
+        except Player.DoesNotExist:
+            return Response({"error": "Игрок не найден"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            if event_id:
+                # Получить один ивент
+                event = await Event.objects.select_related("profile").aget(id=event_id, profile=player, is_active=True)
+                serializer = EventSerializer(event)
+                return Response(serializer.data)
+            else:
+                # Получить все активные ивенты пользователя
+                events = Event.objects.select_related("profile").filter(profile=player, is_active=True)
+                event_list = [event async for event in events.aiterator()]
+                serializer = EventSerializer(event_list, many=True)
+                return Response(serializer.data)
+        except Event.DoesNotExist:
+            return Response({"error": "Ивент не найден"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    async def post(self, request):
+        """Создать новый ивент"""
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            serializer = EventSerializer(data=request.data)
+            if serializer.is_valid():
+                # Сохраняем с создателем
+                event = await Event.objects.acreate(profile=player, **serializer.validated_data)
+                return Response(EventSerializer(event).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    async def patch(self, request, event_id):
+        """Обновить ивент (частично)"""
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            event = await Event.objects.aget(id=event_id, profile=player)
+            serializer = EventSerializer(event, data=request.data, partial=True)
+            if serializer.is_valid():
+                # обновляем объект руками через ORM
+                await Event.objects.select_related("profile").filter(id=event_id, profile=player).aupdate(**serializer.validated_data)
+                event = await Event.objects.select_related("profile").aget(id=event_id)
+                return Response(EventSerializer(event).data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Event.DoesNotExist:
+            return Response({"error": "Ивент не найден или нет прав"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    async def delete(self, request, event_id):
+        """Удалить ивент"""
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            event = await Event.objects.aget(id=event_id, profile=player)
+            await event.adelete()
+            return Response({"message": "Ивент удален"})
+        except Event.DoesNotExist:
+            return Response({"error": "Ивент не найден или нет прав"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema_view(get=opposite_gender_events_get_schema)
+class OppositeGenderEventsView(APIView):
+    """Получить ивенты противоположного пола с фильтрами по возрасту и городу"""
+    async def get(self, request, event_id=None):
+        init_data = availability_init_data(request)
+        if not init_data:
+            return Response({"error": "Не авторизован"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            # Получаем текущего пользователя
+            current_player = await Player.objects.aget(tg_id=init_data["id"])
+            # Если передан event_id - возвращаем один конкретный ивент
+            if event_id:
+                try:
+                    event = await Event.objects.select_related("profile").aget(id=event_id, is_active=True,
+                                profile__gender="Woman" if current_player.gender == "Man" else "Man")
+                    serializer = EventSerializer(event)
+                    return Response(serializer.data)
+                except Event.DoesNotExist:
+                    return Response({"error": "Ивент не найден"}, status=status.HTTP_404_NOT_FOUND)
+            # Определяем противоположный пол
+            opposite_gender = "Woman" if current_player.gender == "Man" else "Man"
+            # Базовый запрос - ивенты противоположного пола, исключая свои
+            events_query = (Event.objects.select_related("profile").filter(is_active=True, profile__gender=opposite_gender)
+                            .exclude(profile=current_player))
+            # Фильтр по городу (если передан)
+            city = request.GET.get('city')
+            if city and city.strip():
+                events_query = events_query.filter(city__iexact=city.strip())
+            # Фильтр по минимальному возрасту (по умолчанию 18)
+            min_age_filter = request.GET.get('min_age', '18')
+            try:
+                min_age = int(min_age_filter)
+                events_query = events_query.filter(min_age__gte=min_age)
+            except ValueError:
+                events_query = events_query.filter(min_age__gte=18)
+            # Фильтр по максимальному возрасту (по умолчанию 99)
+            max_age_filter = request.GET.get('max_age', '99')
+            try:
+                max_age = int(max_age_filter)
+                events_query = events_query.filter(max_age__lte=max_age)
+            except ValueError:
+                events_query = events_query.filter(max_age__lte=99)
+            # Пагинация
+            page = int(request.GET.get('page', 1))
+            page_size = 10
+            if page < 1:
+                page = 1
+            # Считаем общее количество
+            total_count = await events_query.acount()
+            total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 0
+            if total_count == 0:
+                return Response({
+                    "results": [],
+                    "page": 1,
+                    "page_size": page_size,
+                    "total_count": 0,
+                    "total_pages": 0,
+                    "has_prev": False,
+                    "has_next": False,
+                    "prev_page": None,
+                    "next_page": None
+                }, status=status.HTTP_200_OK)
+            if page > total_pages:
+                page = total_pages
+            # Сортировка по дате создания (сначала новые) и пагинация
+            events_query = events_query.order_by('-created_at')
+            start = (page - 1) * page_size
+            end = start + page_size
+            # Получаем список ивентов для текущей страницы
+            events_list = []
+            async for event in events_query[start:end].aiterator():
+                events_list.append(event)
+            serializer = EventSerializer(events_list, many=True)
+            return Response({
+                "results": serializer.data,
+                "page": page,
+                "page_size": page_size,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "has_prev": page > 1,
+                "has_next": page < total_pages,
+                "prev_page": page - 1 if page > 1 else None,
+                "next_page": page + 1 if page < total_pages else None
+            }, status=status.HTTP_200_OK)
+        except Player.DoesNotExist:
+            return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@reaction_to_the_questionnaire
+class UserLikeView(APIView):
+    """Ручка для лайков/дизлайков пользователей"""
+    async def post(self, request):
+        init_data = availability_init_data(request)
+        try:
+            from_player = await Player.objects.aget(tg_id=init_data["id"])
+            to_player_tg_id = request.data.get("to_player_tg_id")
+            reaction_type = request.data.get("reaction_type")
+
+            # ВАЛИДАЦИЯ
+            if not reaction_type or reaction_type not in ['like', 'dislike']:
+                return Response({
+                    "error": "reaction_type обязателен и должен быть 'like' или 'dislike'"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if not to_player_tg_id:
+                return Response({"error": "tg_id обязателен"}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                to_player = await Player.objects.aget(tg_id=to_player_tg_id)
+            except Player.DoesNotExist:
+                return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+            if from_player.tg_id == to_player.tg_id:
+                return Response({"error": "Нельзя реагировать на себя"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # ПРОВЕРЯЕМ ТЕКУЩУЮ РЕАКЦИЮ
+            existing_favorite = await Favorite.objects.filter(
+                owner=from_player,
+                target=to_player
+            ).aexists()
+
+            existing_dislike = await UserReactionDislike.objects.filter(
+                from_player=from_player,
+                to_player=to_player
+            ).aexists()
+
+            # ЛОГИКА TOGGLE: ЕСЛИ УЖЕ ЕСТЬ РЕАКЦИЯ - УБИРАЕМ ЕЁ
+            if reaction_type == 'like':
+                if existing_favorite:
+                    # УБИРАЕМ ЛАЙК
+                    await Favorite.objects.filter(owner=from_player, target=to_player).adelete()
+                    to_player.likes_count -= 1
+                    message = "Лайк убран"
+                    removed = True
+                else:
+                    # СТАВИМ ЛАЙК (предварительно убирая дизлайк если был)
+                    if existing_dislike:
+                        await UserReactionDislike.objects.filter(
+                            from_player=from_player,
+                            to_player=to_player
+                        ).adelete()
+                        to_player.dislikes_count -= 1
+
+                    await Favorite.objects.aupdate_or_create(
+                        owner=from_player,
+                        target=to_player,
+                        defaults={}
+                    )
+                    to_player.likes_count += 1
+                    message = "Лайк поставлен"
+                    removed = False
+
+            else:  # dislike
+                if existing_dislike:
+                    # УБИРАЕМ ДИЗЛАЙК
+                    await UserReactionDislike.objects.filter(
+                        from_player=from_player,
+                        to_player=to_player
+                    ).adelete()
+                    to_player.dislikes_count -= 1
+                    message = "Дизлайк убран"
+                    removed = True
+                else:
+                    # СТАВИМ ДИЗЛАЙК (предварительно убирая лайк если был)
+                    if existing_favorite:
+                        await Favorite.objects.filter(
+                            owner=from_player,
+                            target=to_player
+                        ).adelete()
+                        to_player.likes_count -= 1
+
+                    dislike = UserReactionDislike(
+                        from_player=from_player,
+                        to_player=to_player
+                    )
+                    await dislike.asave()
+                    to_player.dislikes_count += 1
+                    message = "Дизлайк поставлен"
+                    removed = False
+
+            await to_player.asave(update_fields=['likes_count', 'dislikes_count'])
+
+            return Response({
+                "message": message,
+                "removed": removed,
+                "stats": {
+                    "likes_count": to_player.likes_count,
+                    "dislikes_count": to_player.dislikes_count,
+                    "like_ratio": to_player.like_ratio
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# @extend_schema(
+#     tags=["Юкасса"],
+#     summary="Создать платёж YooKassa",
+#     description=(
+#         "Возвращает ссылку на оплату подписки/пакета рецептов.\n\n"
+#         "В теле запроса обязательно прокидывать:\n"
+#         "- `product_id` — id продукта для оплаты\n"
+#         "- `return_url` — url для редиректа после оплаты\n"
+#         "- `init_data` — данные инициализации (telegram_user)\n"
+#     ),
+#     responses={
+#         200: OpenApiResponse(
+#             response=None,  # Нет сериализатора, просто пример
+#             description="Успешный ответ с ссылкой на оплату",
+#             examples=[
+#                 OpenApiExample(
+#                     "Пример ответа",
+#                     value={
+#                         "payment_url": "https://yoomoney.ru/checkout/payments/v2/contract?orderId=2ff78bfc-000f-5000-8000-19f8ea4efe2f",
+#                         "payment_id": "2ff78bfc-000f-5000-8000-19f8ea4efe2f"
+#                     },
+#                     media_type="application/json",
+#                 ),
+#             ],
+#         ),
+#         404: OpenApiResponse(
+#             response=None,
+#             description="Продукт не найден",
+#             examples=[OpenApiExample("Product not found", value={"error": "Product not found"})],
+#         ),
+#         400: OpenApiResponse(
+#             response=None,
+#             description="telegram_user не найден",
+#             examples=[OpenApiExample("Нет init_data", value={"error": "telegram_user not found"})],
+#         ),
+#         500: OpenApiResponse(
+#             response=None,
+#             description="Внутренняя ошибка",
+#             examples=[OpenApiExample("Server error", value={"error": "Internal server error"})],
+#         ),
+#     },
+# )
+@yookassa
+class CreatePaymentView(APIView):
+    """Оплата платной подписки"""
+    async def post(self, request):
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        tg_id = init_data.get("id")  # Извлекаем id игрока
+        data = request.data
+        product_id = data.get("product_id")  # Извлекаем id продукта из запроса
+        return_url = data.get("return_url", "https://rndvu.rozari.info/")  # Извлекаем url для редиректа после оплаты
+        # Получаем продукт и игрока
+        try:
+            product = await Product.objects.aget(id=product_id)
+            # Создаём платеж в Юкассе
+            payment_data = await create_yookassa_payment(
+                amount=product.price,  # Стоимость продукта для оплаты
+                return_url=return_url, # Куда вернется пользователь после оплаты
+                description=f"Оплата {product.name}",  # Описание платежа
+                metadata={"tg_id": tg_id, "product_id": product.id})  # Дополнительные данные для webhook
+            # Возвращаем клиенту ссылку на оплату и id платежа
+            return Response({
+                "payment_url": payment_data["confirmation"]["confirmation_url"],
+                "payment_id": payment_data["id"],})
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
