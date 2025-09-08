@@ -185,13 +185,25 @@ class UserProfileView(APIView):
                 await player.asave(update_fields=updated)
 
             """Файлы: загрузка/удаление"""
-            files = request.FILES.getlist("photos") or request.FILES.getlist("photos[]")
+            # Получаем файлы (если есть)
+            files = []
+            if request.FILES:
+                files = request.FILES.getlist("photos") or request.FILES.getlist("photos[]") or []
 
+            # УНИВЕРСАЛЬНАЯ обработка delete_photo_ids для JSON и FormData
+            delete_ids = []
             delete_ids_raw = request.data.get("delete_photo_ids")
-            if delete_ids_raw is None:
-                delete_ids = request.data.getlist("delete_photo_ids")
-            else:
-                delete_ids = [x.strip() for x in str(delete_ids_raw).split(",") if x.strip()]
+
+            if delete_ids_raw is not None:
+                if isinstance(delete_ids_raw, list):
+                    # Пришел JSON массив: [1, 2, 3]
+                    delete_ids = [str(x) for x in delete_ids_raw]
+                elif isinstance(delete_ids_raw, str):
+                    # Пришла строка из FormData: "1,2,3"
+                    delete_ids = [x.strip() for x in delete_ids_raw.split(",") if x.strip()]
+                elif isinstance(delete_ids_raw, int):
+                    # Пришел одиночный ID как число
+                    delete_ids = [str(delete_ids_raw)]
 
             if is_man:
                 # INSERT новых фото — по одному на файл (asave)
