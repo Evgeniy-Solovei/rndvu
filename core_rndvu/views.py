@@ -674,11 +674,11 @@ class ProfileDetailView(APIView):
         init_data = availability_init_data(request)
         try:
             # Получаем пользователя
-            player = await Player.objects.aget(tg_id=init_data["id"])
+            current_player = await Player.objects.aget(tg_id=init_data["id"])
         except Player.DoesNotExist:
             return Response({"error": "Игрок не найден"}, status=status.HTTP_404_NOT_FOUND)
         # Получаем пользователя для просмотра профиля
-        tg_id = request.data.get("tg_id")
+        tg_id = request.query_params.get("tg_id")
         if not tg_id:
             return Response({"error": "Укажите tg_id"}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -704,7 +704,20 @@ class ProfileDetailView(APIView):
             except ProfileWoman.DoesNotExist:
                 return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
             serializer = FullProfileWomanSerializer(profile, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Флаги
+        is_favorite = await Favorite.objects.filter(owner=current_player, target=target).aexists()
+        is_liked = is_favorite  # лайк = добавление в избранное
+        is_disliked = await UserReactionDislike.objects.filter(from_player=current_player, to_player=target).aexists()
+
+        response_data = serializer.data
+        response_data.update({
+            "is_favorite": is_favorite,
+            "is_liked": is_liked,
+            "is_disliked": is_disliked,
+        })
+
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(get=event_get_schema, post=event_post_schema, patch=event_patch_schema, delete=event_delete_schema)
