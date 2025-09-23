@@ -38,6 +38,8 @@ class PlayerInfoView(APIView):
                     "language_code": init_data.get("language_code") or "ru",
                 }
             )
+            if not player.gender:
+                created = True
             return Response({"created": created, "player": PlayerSerializer(player).data}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": "Ошибка при создании/получении игрока", "details": str(e)},
