@@ -803,6 +803,7 @@ class EventPlayerView(APIView):
 @extend_schema_view(get=opposite_gender_events_get_schema)
 class OppositeGenderEventsView(APIView):
     """Получить ивенты противоположного пола с фильтрами по возрасту и городу"""
+
     async def get(self, request, event_id=None):
         init_data = availability_init_data(request)
         if not init_data:
@@ -810,24 +811,64 @@ class OppositeGenderEventsView(APIView):
         try:
             # Получаем текущего пользователя
             current_player = await Player.objects.aget(tg_id=init_data["id"])
+
             # Если передан event_id - возвращаем один конкретный ивент
             if event_id:
                 try:
-                    event = await Event.objects.select_related("profile").aget(id=event_id, is_active=True,
-                                profile__gender="Woman" if current_player.gender == "Man" else "Man")
+                    # Предзагружаем профиль и связанные данные
+                    event = await Event.objects.select_related(
+                        "profile",
+                        "profile__woman_profile",
+                        "profile__man_profile"
+                    ).prefetch_related(
+                        "profile__woman_profile__photos",
+                        "profile__man_profile__photos"
+                    ).aget(
+                        id=event_id,
+                        is_active=True,
+                        profile__gender="Woman" if current_player.gender == "Man" else "Man"
+                    )
+
+                    # Создаем данные для ответа
                     serializer = EventSerializer(event)
-                    return Response(serializer.data)
+                    response_data = serializer.data
+
+                    # Добавляем профиль создателя
+                    profile = event.profile
+                    if profile.gender == "Woman" and hasattr(profile, 'woman_profile'):
+                        creator_data = FullProfileWomanSerializer(profile.woman_profile).data
+                    elif profile.gender == "Man" and hasattr(profile, 'man_profile'):
+                        creator_data = FullProfileManSerializer(profile.man_profile).data
+                    else:
+                        creator_data = None
+
+                    response_data['creator_profile'] = creator_data
+                    return Response(response_data)
+
                 except Event.DoesNotExist:
                     return Response({"error": "Ивент не найден"}, status=status.HTTP_404_NOT_FOUND)
+
             # Определяем противоположный пол
             opposite_gender = "Woman" if current_player.gender == "Man" else "Man"
-            # Базовый запрос - ивенты противоположного пола, исключая свои
-            events_query = (Event.objects.select_related("profile").filter(is_active=True, profile__gender=opposite_gender)
-                            .exclude(profile=current_player))
+
+            # Базовый запрос с предзагрузкой всех данных
+            events_query = (Event.objects.select_related(
+                "profile",
+                "profile__woman_profile",
+                "profile__man_profile"
+            ).prefetch_related(
+                "profile__woman_profile__photos",
+                "profile__man_profile__photos"
+            ).filter(
+                is_active=True,
+                profile__gender=opposite_gender
+            ).exclude(profile=current_player))
+
             # Фильтр по городу (если передан)
             city = request.GET.get('city')
             if city and city.strip():
                 events_query = events_query.filter(city__iexact=city.strip())
+
             # Фильтр по минимальному возрасту (по умолчанию 18)
             min_age_filter = request.GET.get('min_age', '18')
             try:
@@ -835,6 +876,7 @@ class OppositeGenderEventsView(APIView):
                 events_query = events_query.filter(min_age__gte=min_age)
             except ValueError:
                 events_query = events_query.filter(min_age__gte=18)
+
             # Фильтр по максимальному возрасту (по умолчанию 99)
             max_age_filter = request.GET.get('max_age', '99')
             try:
@@ -842,14 +884,17 @@ class OppositeGenderEventsView(APIView):
                 events_query = events_query.filter(max_age__lte=max_age)
             except ValueError:
                 events_query = events_query.filter(max_age__lte=99)
+
             # Пагинация
             page = int(request.GET.get('page', 1))
             page_size = 10
             if page < 1:
                 page = 1
+
             # Считаем общее количество
             total_count = await events_query.acount()
             total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 0
+
             if total_count == 0:
                 return Response({
                     "results": [],
@@ -862,19 +907,40 @@ class OppositeGenderEventsView(APIView):
                     "prev_page": None,
                     "next_page": None
                 }, status=status.HTTP_200_OK)
+
             if page > total_pages:
                 page = total_pages
+
             # Сортировка по дате создания (сначала новые) и пагинация
             events_query = events_query.order_by('-created_at')
             start = (page - 1) * page_size
             end = start + page_size
+
             # Получаем список ивентов для текущей страницы
             events_list = []
             async for event in events_query[start:end].aiterator():
                 events_list.append(event)
-            serializer = EventSerializer(events_list, many=True)
+
+            # Сериализуем данные
+            events_data = []
+            for event in events_list:
+                event_serializer = EventSerializer(event)
+                event_data = event_serializer.data
+
+                # Добавляем профиль создателя
+                profile = event.profile
+                if profile.gender == "Woman" and hasattr(profile, 'woman_profile'):
+                    creator_data = FullProfileWomanSerializer(profile.woman_profile).data
+                elif profile.gender == "Man" and hasattr(profile, 'man_profile'):
+                    creator_data = FullProfileManSerializer(profile.man_profile).data
+                else:
+                    creator_data = None
+
+                event_data['creator_profile'] = creator_data
+                events_data.append(event_data)
+
             return Response({
-                "results": serializer.data,
+                "results": events_data,
                 "page": page,
                 "page_size": page_size,
                 "total_count": total_count,
@@ -884,6 +950,7 @@ class OppositeGenderEventsView(APIView):
                 "prev_page": page - 1 if page > 1 else None,
                 "next_page": page + 1 if page < total_pages else None
             }, status=status.HTTP_200_OK)
+
         except Player.DoesNotExist:
             return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
