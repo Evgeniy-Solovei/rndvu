@@ -1,7 +1,7 @@
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, IntegerField, CharField, TextField, ForeignKey, CASCADE
 
 from core_rndvu.validators import validate_birth_date, validate_photo_size
 
@@ -14,7 +14,7 @@ class Player(models.Model):
     username = models.CharField(max_length=100, verbose_name="Nickname игрока", blank=True, null=True)
     language_code = models.CharField(max_length=30, verbose_name="Язык пользователя", default="ru")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name="Пол пользователя", blank=True, null=True)
-    city = models.CharField(max_length=100, verbose_name="Город", blank=True, null=True)
+    city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации игрока")
     hide_age_in_profile = models.BooleanField(default=True, verbose_name="Показывать возраст да/нет")
     is_active = models.BooleanField(default=True, verbose_name="Активный профиль да/нет")
@@ -253,9 +253,8 @@ class Event(models.Model):
         ('club_and_hotel', 'Клуб и отель'),
         ('travel_together', 'Совместная поездка'),
     ]
-
     profile = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='created_events', verbose_name="Создатель ивента")
-    city = models.CharField(max_length=150, verbose_name="Город")
+    city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
     date = models.DateField(verbose_name="Дата ивента", blank=True, null=True)
     duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Длительность ивента", blank=True, null=True)
     exact_time = models.TimeField(verbose_name="Точное время встречи", blank=True, null=True)
