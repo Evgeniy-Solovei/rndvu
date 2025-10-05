@@ -1,5 +1,7 @@
 import json
 import math
+
+from adrf.generics import GenericAPIView
 from adrf.views import APIView
 from django.db.models import Prefetch, Count, Q, F, Case, When, DateField
 from django.utils import timezone
@@ -802,7 +804,7 @@ class EventPlayerView(APIView):
 
 @extend_schema_view(get=opposite_gender_events_get_schema)
 class OppositeGenderEventsView(APIView):
-    """Получить ивенты противоположного пола с фильтрами по возрасту и городу"""
+    """Получить ивенты противоположного пола с фильтрами по возрасту, городу и верификации"""
 
     async def get(self, request, event_id=None):
         init_data = availability_init_data(request)
@@ -884,6 +886,11 @@ class OppositeGenderEventsView(APIView):
                 events_query = events_query.filter(max_age__lte=max_age)
             except ValueError:
                 events_query = events_query.filter(max_age__lte=99)
+
+            # Фильтр по верификации - только если явно запрошены верифицированные
+            verification_filter = request.GET.get('verification')
+            if verification_filter and verification_filter.lower() in ['true', '1', 'yes']:
+                events_query = events_query.filter(profile__verification=True)
 
             # Пагинация
             page = int(request.GET.get('page', 1))
@@ -1132,4 +1139,18 @@ class CreatePaymentView(APIView):
                 "payment_id": payment_data["id"],})
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class UpdateVerificationView(GenericAPIView):
+    """Обновление флага для варификация пользователя"""
+    serializer_class = UpdateVerificationSerializer
+    async def patch(self, request):
+        init_data = availability_init_data(request)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            player.verification = True  # Устанавливаем флаг в True
+            await player.asave()  # Сохраняем изменения
+            return Response({"verification": True})
+        except Player.DoesNotExist:
+            return Response({"error": "Пользователь не найден"}, status=404)
 

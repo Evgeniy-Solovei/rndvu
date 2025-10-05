@@ -16,8 +16,9 @@ urlpatterns = [
     path('events/<int:event_id>/', EventPlayerView.as_view(), name='event-detail'),  # GET один, PATCH, DELETE
     path('events/opposite/', OppositeGenderEventsView.as_view(), name='opposite-events'),
     path('events/opposite/<int:event_id>/', OppositeGenderEventsView.as_view(), name='opposite-event'),
-
     path('user-likes/', UserLikeView.as_view(), name='user-likes'),
+    path('update-verification/', UpdateVerificationView.as_view(), name='update-verification'),
+
     path("yookassa-create/", CreatePaymentView.as_view(), name='yookassa-create'),
     path('yookassa/webhook/', YookassaWebhookView.as_view(), name='yookassa-webhook'),
 ]

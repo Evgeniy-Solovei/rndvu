@@ -15,6 +15,7 @@ class Player(models.Model):
     language_code = models.CharField(max_length=30, verbose_name="Язык пользователя", default="ru")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name="Пол пользователя", blank=True, null=True)
     city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
+    alpha2 = models.IntegerField(null=True, blank=True, verbose_name="Код страны из GeoNames")
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации игрока")
     hide_age_in_profile = models.BooleanField(default=True, verbose_name="Показывать возраст да/нет")
     is_active = models.BooleanField(default=True, verbose_name="Активный профиль да/нет")
@@ -24,6 +25,8 @@ class Player(models.Model):
     count_days_paid_subscription = models.PositiveBigIntegerField(blank=True, null=True,
                                                                   verbose_name="Остаток дней платной подписки")
     subscription_end_date = models.DateField(null=True, blank=True, verbose_name="Дата окончания подписки")
+    verification = models.BooleanField(default=False, verbose_name="Подтверждение профиля")
+    link_tg = models.CharField(max_length=100, blank=True, null=True, verbose_name="Ссылка на Telegram")
 
 
     class Meta:
@@ -43,6 +46,12 @@ class Player(models.Model):
         if total == 0:
             return 0
         return round((self.likes_count / total) * 100, 1)
+
+    def save(self, *args, **kwargs):
+        # Автоматически создаем ссылку при сохранении
+        if self.tg_id:
+            self.link_tg = f"https://t.me/{self.tg_id}"
+        super().save(*args, **kwargs)
 
 
 class UserReactionDislike(models.Model):
@@ -253,14 +262,24 @@ class Event(models.Model):
         ('club_and_hotel', 'Клуб и отель'),
         ('travel_together', 'Совместная поездка'),
     ]
+
+    CURRENCY_CHOICES = [
+        ('USD', 'usd'),
+        ('USDT', 'usdt'),
+        ('EU', 'eu'),
+        ('RU', 'ru'),
+    ]
+
     profile = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='created_events', verbose_name="Создатель ивента")
     city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
+    alpha2 = models.IntegerField(null=True, blank=True, verbose_name="Код страны из GeoNames")
     date = models.DateField(verbose_name="Дата ивента", blank=True, null=True)
     duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Длительность ивента", blank=True, null=True)
     exact_time = models.TimeField(verbose_name="Точное время встречи", blank=True, null=True)
     place = models.CharField(max_length=50, choices=PLACE_CHOICES, verbose_name="Место ивента", blank=True, null=True)
     min_age = models.IntegerField(default=18, validators=[MinValueValidator(18), MaxValueValidator(99)], verbose_name="Минимальный возраст")
     max_age = models.IntegerField(default=99, validators=[MinValueValidator(18), MaxValueValidator(99)], verbose_name="Максимальный возраст")
+    currency = models.CharField(max_length=60, choices=CURRENCY_CHOICES, blank=True, null=True, verbose_name='Валюта награды за ивент')
     reward = models.IntegerField(default=0, validators=[MinValueValidator(0)], verbose_name="Награда за ивент")
     description = models.TextField(verbose_name="Описание ивента", blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Время создания")

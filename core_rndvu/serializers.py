@@ -346,3 +346,10 @@ class EventSerializer(ModelSerializer):
         fields = super().get_fields()
         fields.pop('profile', None)  # выпиливаем profile
         return fields
+
+
+class UpdateVerificationSerializer(ModelSerializer):
+    """Сериализатор модели Player, для изменение поле варифицированной анкеты"""
+    class Meta:
+        model = Player
+        fields = ['verification']
