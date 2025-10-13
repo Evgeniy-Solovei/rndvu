@@ -412,6 +412,7 @@ class GameUsersView(APIView):
             min_age = request.query_params.get("min_age")
             max_age = request.query_params.get("max_age")
             page = int(request.query_params.get("page", 1) or 1)
+            premium = request.query_params.get("premium", "").lower() == "true"
             if page < 1:
                 page = 1
 
@@ -458,8 +459,13 @@ class GameUsersView(APIView):
                 qs = qs.select_related("woman_profile").prefetch_related(
                     Prefetch("woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")))
 
-            # Рандомная выдача
-            qs = qs.order_by("?")
+            # Измененная логика сортировки в зависимости от флага premium
+            if premium:
+                # Для премиум-пользователей: сортировка по дате регистрации (новые сначала)
+                qs = qs.order_by("-registration_date")
+            else:
+                # Для обычных пользователей: случайная выдача
+                qs = qs.order_by("?")
 
             # Пагинация
             page_size = 10
@@ -491,7 +497,8 @@ class GameUsersView(APIView):
                 "has_prev": page > 1,
                 "has_next": page < total_pages,
                 "prev_page": page - 1 if page > 1 else None,
-                "next_page": page + 1 if page < total_pages else None
+                "next_page": page + 1 if page < total_pages else None,
+                "premium": premium
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

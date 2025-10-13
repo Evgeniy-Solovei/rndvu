@@ -19,6 +19,6 @@ urlpatterns = [
     path('user-likes/', UserLikeView.as_view(), name='user-likes'),
     path('update-verification/', UpdateVerificationView.as_view(), name='update-verification'),
 
-    path("yookassa-create/", CreatePaymentView.as_view(), name='yookassa-create'),
-    path('yookassa/webhook/', YookassaWebhookView.as_view(), name='yookassa-webhook'),
+    path("payment-create/", CreatePaymentView.as_view(), name='yookassa-create'),
+    path('payment/webhook/', YookassaWebhookView.as_view(), name='yookassa-webhook'),
 ]
