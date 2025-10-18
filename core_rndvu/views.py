@@ -655,6 +655,37 @@ class FavoriteView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    async def post(self, request):
+        # Проверяем авторизацию через Telegram
+        init_data = availability_init_data(request)
+        try:
+            # Получаем пользователя
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            tg_id = request.data.get("tg_id")
+            if not tg_id:
+                return Response({"error": "Укажите tg_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                target = await Player.objects.aget(tg_id=tg_id)
+            except Player.DoesNotExist:
+                return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+            # Проверяем не добавлен ли уже в избранное
+            if await Favorite.objects.filter(owner=player, target=target).aexists():
+                return Response({"error": "Уже в избранном"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Создаем запись в избранном
+            favorite = await Favorite.objects.acreate(owner=player, target=target)
+
+            return Response({
+                "id": favorite.id,
+                "created_at": favorite.created_at,
+                "target": PlayerSerializer(favorite.target).data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     async def delete(self, request):
         # Проверяем авторизацию через Telegram
         init_data = availability_init_data(request)
