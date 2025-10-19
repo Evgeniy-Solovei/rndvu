@@ -643,7 +643,8 @@ class FavoriteView(APIView):
         try:
             # Получаем пользователя
             player = await Player.objects.aget(tg_id=init_data["id"])
-            qs = Favorite.objects.filter(owner=player).select_related("target").order_by("-created_at")
+            qs = (Favorite.objects.filter(owner=player).select_related("target", "target__man_profile", "target__woman_profile")
+                  .prefetch_related("target__man_profile__photos", "target__woman_profile__photos").order_by("-created_at"))
             items = []
             async for fav in qs.aiterator():
                 items.append({
