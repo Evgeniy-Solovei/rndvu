@@ -106,32 +106,32 @@ class YookassaWebhookView(APIView):
     async def post(self, request):
         try:
             # ЛОГИРУЕМ ВСЁ ЧТО ПРИХОДИТ
-            logger.info("=== WEBHOOK START ===")
+            print("=== WEBHOOK START ===")
             body = request.body
-            logger.info(f"Raw body: {body}")
+            print(f"Raw body: {body}")
 
             data = json.loads(body)
-            logger.info(f"Parsed data: {json.dumps(data, indent=2, ensure_ascii=False)}")
+            print(f"Parsed data: {json.dumps(data, indent=2, ensure_ascii=False)}")
 
             event_type = data.get("event")
             payment_data = data.get("object", {})
 
-            logger.info(f"Event type: {event_type}")
-            logger.info(f"Payment data keys: {payment_data.keys()}")
+            print(f"Event type: {event_type}")
+            print(f"Payment data keys: {payment_data.keys()}")
 
             # Если событие — успешная оплата
             if event_type == "payment.succeeded":
                 payment_id = payment_data.get("id")
                 metadata = payment_data.get("metadata", {})
 
-                logger.info(f"Payment ID: {payment_id}")
-                logger.info(f"Metadata: {metadata}")
-                logger.info(f"TG ID: {metadata.get('tg_id')}")
-                logger.info(f"Product ID: {metadata.get('product_id')}")
+                print(f"Payment ID: {payment_id}")
+                print(f"Metadata: {metadata}")
+                print(f"TG ID: {metadata.get('tg_id')}")
+                print(f"Product ID: {metadata.get('product_id')}")
 
                 if not all([payment_id, metadata.get('tg_id'), metadata.get('product_id')]):
-                    logger.error("❌ Не хватает обязательных данных в вебхуке")
-                    logger.error(
+                    print("❌ Не хватает обязательных данных в вебхуке")
+                    print(
                         f"Payment ID: {payment_id}, TG ID: {metadata.get('tg_id')}, Product ID: {metadata.get('product_id')}")
                     return HttpResponse("Missing data", status=400)
 
@@ -145,21 +145,21 @@ class YookassaWebhookView(APIView):
                     return HttpResponse("Failed to process", status=400)
 
             elif event_type == "payment.waiting_for_capture":
-                logger.info("⏳ Платёж ожидает подтверждения (capture), ID: %s", payment_data.get("id"))
+                print("⏳ Платёж ожидает подтверждения (capture), ID: %s", payment_data.get("id"))
             elif event_type == "payment.canceled":
-                logger.warning("🚫 Платёж отменён, ID: %s", payment_data.get("id"))
+                print("🚫 Платёж отменён, ID: %s", payment_data.get("id"))
             elif event_type == "payment.expired":
-                logger.warning("⌛ Платёж просрочен, ID: %s", payment_data.get("id"))
+                print("⌛ Платёж просрочен, ID: %s", payment_data.get("id"))
             elif event_type == "refund.succeeded":
-                logger.info("💸 Возврат успешно выполнен, ID: %s", payment_data.get("id"))
+                print("💸 Возврат успешно выполнен, ID: %s", payment_data.get("id"))
             else:
-                logger.info(f"📨 Необработанный тип события: {event_type}")
+                print(f"📨 Необработанный тип события: {event_type}")
 
-            logger.info("=== WEBHOOK END ===")
+            print("=== WEBHOOK END ===")
             return HttpResponse("OK", status=200)
 
         except Exception as e:
-            logger.error(f"💥 CRITICAL WEBHOOK ERROR: {str(e)}")
+            print(f"💥 CRITICAL WEBHOOK ERROR: {str(e)}")
             return HttpResponse("Server error", status=500)
 
 async def mark_payment_success(tg_id: int, product_id: int, payment_id: str):
