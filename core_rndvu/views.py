@@ -650,7 +650,7 @@ class FavoriteView(APIView):
                 items.append({
                     "id": fav.id,
                     "created_at": fav.created_at,
-                    "target": PlayerSerializer(fav.target).data,
+                    "target": PlayerFovariteSerializer(fav.target).data,
                 })
             return Response({"results": items, "count": len(items)}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -681,7 +681,7 @@ class FavoriteView(APIView):
             return Response({
                 "id": favorite.id,
                 "created_at": favorite.created_at,
-                "target": PlayerSerializer(favorite.target).data
+                "target": PlayerFovariteSerializer(favorite.target).data
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
