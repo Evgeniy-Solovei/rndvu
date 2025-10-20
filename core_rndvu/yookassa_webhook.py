@@ -66,101 +66,42 @@ async def create_yookassa_payment(amount: int, return_url: str, description: str
 
 @webhook_yookassa
 @method_decorator(csrf_exempt, name='dispatch')
-# class YookassaWebhookView(APIView):
-#     async def post(self, request):
-#         # Получаем тело POST-запроса из webhook от Юкассы (в бинарном виде)
-#         body = request.body
-#         # Декодируем JSON из тела запроса в словарь Python
-#         data = json.loads(body)
-#         # Получаем тип события (например, "payment.succeeded")
-#         event_type = data.get("event")
-#         # Получаем объект с данными платежа (внутри ключа "object")
-#         payment_data = data.get("object", {})
-#         # Если событие — успешная оплата
-#         if event_type == "payment.succeeded":
-#             payment_id = payment_data["id"]  # Получаем id платежа
-#             metadata = payment_data.get("metadata", {})  # Получаем метаданные из платежа (там хранятся tg_id и product_id)
-#             tg_id = metadata.get("tg_id")  # Извлекаем tg_id из метаданных
-#             product_id = metadata.get("product_id")  # Извлекаем product_id из метаданных
-#             if not all([payment_id, tg_id, product_id]):
-#                 logger.error("❌ Не хватает обязательных данных в вебхуке")
-#                 return HttpResponse("Missing data", status=400)
-#             # Вызываем функцию, которая помечает покупку как успешную и активирует подписку (если нужна)
-#             success = await mark_payment_success(tg_id=tg_id, product_id=product_id, payment_id=payment_id)
-#             if not success:
-#                 return HttpResponse("Failed to process", status=400)
-#         elif event_type == "payment.waiting_for_capture":
-#             logger.info("⏳ Платёж ожидает подтверждения (capture), ID: %s", payment_data.get("id"))
-#         elif event_type == "payment.canceled":
-#             logger.warning("🚫 Платёж отменён, ID: %s", payment_data.get("id"))
-#         elif event_type == "payment.expired":
-#             logger.warning("⌛ Платёж просрочен, ID: %s", payment_data.get("id"))
-#         elif event_type == "refund.succeeded":
-#             logger.info("💸 Возврат успешно выполнен, ID: %s", payment_data.get("id"))
-#         else:
-#             logger.info(f"📨 Необработанный тип события: {event_type}")
-#         # Возвращаем Юкассе ответ, что webhook обработан успешно
-#         return HttpResponse("OK", status=200)
-
 class YookassaWebhookView(APIView):
     async def post(self, request):
-        try:
-            # ЛОГИРУЕМ ВСЁ ЧТО ПРИХОДИТ
-            print("=== WEBHOOK START ===")
-            body = request.body
-            print(f"Raw body: {body}")
+        # Получаем тело POST-запроса из webhook от Юкассы (в бинарном виде)
+        body = request.body
+        # Декодируем JSON из тела запроса в словарь Python
+        data = json.loads(body)
+        # Получаем тип события (например, "payment.succeeded")
+        event_type = data.get("event")
+        # Получаем объект с данными платежа (внутри ключа "object")
+        payment_data = data.get("object", {})
+        # Если событие — успешная оплата
+        if event_type == "payment.succeeded":
+            payment_id = payment_data["id"]  # Получаем id платежа
+            metadata = payment_data.get("metadata", {})  # Получаем метаданные из платежа (там хранятся tg_id и product_id)
+            tg_id = metadata.get("tg_id")  # Извлекаем tg_id из метаданных
+            product_id = metadata.get("product_id")  # Извлекаем product_id из метаданных
+            if not all([payment_id, tg_id, product_id]):
+                logger.error("❌ Не хватает обязательных данных в вебхуке")
+                return HttpResponse("Missing data", status=400)
+            # Вызываем функцию, которая помечает покупку как успешную и активирует подписку (если нужна)
+            success = await mark_payment_success(tg_id=tg_id, product_id=product_id, payment_id=payment_id)
+            if not success:
+                return HttpResponse("Failed to process", status=400)
+        elif event_type == "payment.waiting_for_capture":
+            logger.info("⏳ Платёж ожидает подтверждения (capture), ID: %s", payment_data.get("id"))
+        elif event_type == "payment.canceled":
+            logger.warning("🚫 Платёж отменён, ID: %s", payment_data.get("id"))
+        elif event_type == "payment.expired":
+            logger.warning("⌛ Платёж просрочен, ID: %s", payment_data.get("id"))
+        elif event_type == "refund.succeeded":
+            logger.info("💸 Возврат успешно выполнен, ID: %s", payment_data.get("id"))
+        else:
+            logger.info(f"📨 Необработанный тип события: {event_type}")
+        # Возвращаем Юкассе ответ, что webhook обработан успешно
+        return HttpResponse("OK", status=200)
 
-            data = json.loads(body)
-            print(f"Parsed data: {json.dumps(data, indent=2, ensure_ascii=False)}")
-
-            event_type = data.get("event")
-            payment_data = data.get("object", {})
-
-            print(f"Event type: {event_type}")
-            print(f"Payment data keys: {payment_data.keys()}")
-
-            # Если событие — успешная оплата
-            if event_type == "payment.succeeded":
-                payment_id = payment_data.get("id")
-                metadata = payment_data.get("metadata", {})
-
-                print(f"Payment ID: {payment_id}")
-                print(f"Metadata: {metadata}")
-                print(f"TG ID: {metadata.get('tg_id')}")
-                print(f"Product ID: {metadata.get('product_id')}")
-
-                if not all([payment_id, metadata.get('tg_id'), metadata.get('product_id')]):
-                    print("❌ Не хватает обязательных данных в вебхуке")
-                    print(
-                        f"Payment ID: {payment_id}, TG ID: {metadata.get('tg_id')}, Product ID: {metadata.get('product_id')}")
-                    return HttpResponse("Missing data", status=400)
-
-                success = await mark_payment_success(
-                    tg_id=metadata.get('tg_id'),
-                    product_id=metadata.get('product_id'),
-                    payment_id=payment_id
-                )
-
-                if not success:
-                    return HttpResponse("Failed to process", status=400)
-
-            elif event_type == "payment.waiting_for_capture":
-                print("⏳ Платёж ожидает подтверждения (capture), ID: %s", payment_data.get("id"))
-            elif event_type == "payment.canceled":
-                print("🚫 Платёж отменён, ID: %s", payment_data.get("id"))
-            elif event_type == "payment.expired":
-                print("⌛ Платёж просрочен, ID: %s", payment_data.get("id"))
-            elif event_type == "refund.succeeded":
-                print("💸 Возврат успешно выполнен, ID: %s", payment_data.get("id"))
-            else:
-                print(f"📨 Необработанный тип события: {event_type}")
-
-            print("=== WEBHOOK END ===")
-            return HttpResponse("OK", status=200)
-
-        except Exception as e:
-            print(f"💥 CRITICAL WEBHOOK ERROR: {str(e)}")
-            return HttpResponse("Server error", status=500)
 
 async def mark_payment_success(tg_id: int, product_id: int, payment_id: str):
     """Обработка успешного платежа - активация подписки"""
@@ -186,6 +127,8 @@ async def mark_payment_success(tg_id: int, product_id: int, payment_id: str):
             # Начинаем новую подписку
             player.subscription_end_date = today + timedelta(days=extra_days)
         player.paid_subscription = True
+        if player.count_days_paid_subscription is None:
+            player.count_days_paid_subscription = 0
         player.count_days_paid_subscription += extra_days
         await player.asave(update_fields=['paid_subscription', 'count_days_paid_subscription', 'subscription_end_date'])
         logger.info(f"✅ Подписка активирована: +{extra_days} дней для {tg_id}, до {player.subscription_end_date}")

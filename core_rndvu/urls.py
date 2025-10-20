@@ -1,6 +1,6 @@
 from django.urls import path
 from core_rndvu.views import *
-from core_rndvu.yookassa_webhook import YookassaWebhookView
+from core_rndvu.yookassa_webhook import *
 
 urlpatterns = [
     path('player-info/', PlayerInfoView.as_view(), name='player_info'),

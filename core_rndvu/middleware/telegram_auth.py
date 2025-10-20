@@ -9,7 +9,7 @@ from logger_conf import logger
 
 
 EXCLUDED_PATHS = ["/admin/", "/media/", "/static/", "/docs/", "/favicon.ico", "/rndvu/schema/",
-                  "/rndvu/schema/swagger-ui/"]
+                  "/rndvu/schema/swagger-ui/", "/api/payment/webhook/"]
 
 
 def verify_telegram_auth(init_data: str, bot_token: str):
