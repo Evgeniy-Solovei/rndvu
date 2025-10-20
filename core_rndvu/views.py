@@ -1111,48 +1111,6 @@ class UserLikeView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# @extend_schema(
-#     tags=["Юкасса"],
-#     summary="Создать платёж YooKassa",
-#     description=(
-#         "Возвращает ссылку на оплату подписки/пакета рецептов.\n\n"
-#         "В теле запроса обязательно прокидывать:\n"
-#         "- `product_id` — id продукта для оплаты\n"
-#         "- `return_url` — url для редиректа после оплаты\n"
-#         "- `init_data` — данные инициализации (telegram_user)\n"
-#     ),
-#     responses={
-#         200: OpenApiResponse(
-#             response=None,  # Нет сериализатора, просто пример
-#             description="Успешный ответ с ссылкой на оплату",
-#             examples=[
-#                 OpenApiExample(
-#                     "Пример ответа",
-#                     value={
-#                         "payment_url": "https://yoomoney.ru/checkout/payments/v2/contract?orderId=2ff78bfc-000f-5000-8000-19f8ea4efe2f",
-#                         "payment_id": "2ff78bfc-000f-5000-8000-19f8ea4efe2f"
-#                     },
-#                     media_type="application/json",
-#                 ),
-#             ],
-#         ),
-#         404: OpenApiResponse(
-#             response=None,
-#             description="Продукт не найден",
-#             examples=[OpenApiExample("Product not found", value={"error": "Product not found"})],
-#         ),
-#         400: OpenApiResponse(
-#             response=None,
-#             description="telegram_user не найден",
-#             examples=[OpenApiExample("Нет init_data", value={"error": "telegram_user not found"})],
-#         ),
-#         500: OpenApiResponse(
-#             response=None,
-#             description="Внутренняя ошибка",
-#             examples=[OpenApiExample("Server error", value={"error": "Internal server error"})],
-#         ),
-#     },
-# )
 @yookassa
 class CreatePaymentView(APIView):
     """Оплата платной подписки"""
@@ -1165,6 +1123,7 @@ class CreatePaymentView(APIView):
         return_url = data.get("return_url", "https://rndvu.rozari.info/")  # Извлекаем url для редиректа после оплаты
         # Получаем продукт и игрока
         try:
+            player = await Player.objects.aget(tg_id=tg_id)
             product = await Product.objects.aget(id=product_id)
             # Создаём платеж в Юкассе
             payment_data = await create_yookassa_payment(
@@ -1172,14 +1131,19 @@ class CreatePaymentView(APIView):
                 return_url=return_url, # Куда вернется пользователь после оплаты
                 description=f"Оплата {product.name}",  # Описание платежа
                 metadata={"tg_id": tg_id, "product_id": product.id})  # Дополнительные данные для webhook
+            # Создаем запись в БД с настоящим payment_id
+            await Purchase.objects.acreate(player=player, product=product, payment_id=payment_data["id"], is_successful=False)
             # Возвращаем клиенту ссылку на оплату и id платежа
             return Response({
                 "payment_url": payment_data["confirmation"]["confirmation_url"],
                 "payment_id": payment_data["id"],})
+        except Player.DoesNotExist:
+            return Response({"error": "Player not found"}, status=404)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
+@update_verification
 class UpdateVerificationView(GenericAPIView):
     """Обновление флага для варификация пользователя"""
     serializer_class = UpdateVerificationSerializer
@@ -1193,3 +1157,14 @@ class UpdateVerificationView(GenericAPIView):
         except Player.DoesNotExist:
             return Response({"error": "Пользователь не найден"}, status=404)
 
+
+@product_list
+class ProductListView(APIView):
+    """Получаем все платные продукты"""
+    async def get(self, request):
+        init_data = availability_init_data(request)
+        if not init_data:
+            return Response({"error": "telegram_user not found"}, status=400)
+        products = [product async for product in Product.objects.all().order_by('id')]
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)

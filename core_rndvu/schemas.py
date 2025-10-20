@@ -1200,3 +1200,60 @@ yookassa = extend_schema(
         500: ErrorResponseSerializer,
     }
 )
+
+
+product_list = extend_schema(
+    tags=["Платежи"],
+    summary="Получить список платных продуктов",
+    description=(
+        "Возвращает список всех доступных платных продуктов (подписок).\n\n"
+        "⚠️ Требуется заголовок `X-Init-Data` (init_data от Telegram WebApp)."
+    ),
+    responses={
+        200: ProductSerializer(many=True),
+        400: OpenApiResponse(
+            description="Неверные данные авторизации"
+        ),
+    }
+)
+
+
+
+webhook_yookassa = extend_schema(
+    tags=["Юкасса"],
+    summary="Webhook YooKassa",
+    description=(
+        "ЮKassa шлёт сюда уведомления о платеже.\n\n"
+        "В продакшене вызывается внешним сервисом; вручную трогать не нужно."
+    ),
+    responses={
+        200: OpenApiResponse(description="OK (принято)"),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Недостаточно данных",
+            examples=[OpenApiExample("Missing data", value="Missing data")],
+        ),
+    },
+)
+
+
+update_verification = extend_schema(
+    tags=["Игрок"],
+    summary="Верификация пользователя",
+    description=(
+        "Устанавливает флаг верификации пользователя в True.\n\n"
+        "⚠️ Требуется заголовок `X-Init-Data` (init_data от Telegram WebApp)."
+    ),
+    responses={
+        200: OpenApiResponse(
+            description="Верификация успешно установлена",
+            examples=[
+                OpenApiExample(
+                    "Пример ответа",
+                    value={"verification": True}
+                )
+            ]
+        ),
+        404: OpenApiResponse(description="Пользователь не найден"),
+    }
+)

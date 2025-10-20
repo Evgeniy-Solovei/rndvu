@@ -394,3 +394,10 @@ class UpdateVerificationSerializer(ModelSerializer):
     class Meta:
         model = Player
         fields = ['verification']
+
+
+class ProductSerializer(ModelSerializer):
+    """Сериализатор модели Product, для предоставления информации о продуктах премиум подписки"""
+    class Meta:
+        model = Product
+        fields = "__all__"

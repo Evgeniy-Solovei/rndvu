@@ -5,10 +5,8 @@ from django.http import JsonResponse, HttpResponse
 from django.utils.timezone import localtime
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import sync_and_async_middleware, method_decorator
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
-
 from core_rndvu.models import Player, Product, Purchase
+from core_rndvu.schemas import webhook_yookassa
 from logger_conf import logger
 import json
 import uuid
@@ -66,23 +64,7 @@ async def create_yookassa_payment(amount: int, return_url: str, description: str
         # Если ошибка — поднимаем исключение с текстом ошибки от Юкассы
         raise Exception(f"Ошибка при создании платежа: {response.text}")
 
-
-@extend_schema(
-    tags=["Юкасса"],
-    summary="Webhook YooKassa",
-    description=(
-        "ЮKassa шлёт сюда уведомления о платеже.\n\n"
-        "В продакшене вызывается внешним сервисом; вручную трогать не нужно."
-    ),
-    responses={
-        200: OpenApiResponse(description="OK (принято)"),
-        400: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description="Недостаточно данных",
-            examples=[OpenApiExample("Missing data", value="Missing data")],
-        ),
-    },
-)
+@webhook_yookassa
 @method_decorator(csrf_exempt, name='dispatch')
 class YookassaWebhookView(APIView):
     async def post(self, request):
@@ -122,33 +104,36 @@ class YookassaWebhookView(APIView):
 
 
 async def mark_payment_success(tg_id: int, product_id: int, payment_id: str):
+    """Обработка успешного платежа - активация подписки"""
     try:
-        player = await Player.objects.aget(tg_id=tg_id)
-        product = await Product.objects.aget(id=product_id)
-        # Проверяем, существует ли уже покупка с таким payment_id
-        exists = await Purchase.objects.filter(payment_id=payment_id).aexists()
-        if exists:
-            logger.warning(f"⚠️ Покупка с payment_id={payment_id} уже существует")
-            return False
-        # Создаем новую запись о покупке
-        await Purchase.objects.acreate(player=player, product=product, payment_id=payment_id, is_successful=True)
-        # подписка — отмечаем игрока как платного
+        # Находим запись о покупке
+        purchase = await Purchase.objects.select_related('player', 'product').aget(payment_id=payment_id)
+        # Если уже обработано - выходим
+        if purchase.is_successful:
+            logger.warning(f"⚠️ Покупка уже обработана: {payment_id}")
+            return True
+        # Помечаем как успешную
+        purchase.is_successful = True
+        await purchase.asave()
+        player = purchase.player
+        product = purchase.product
+        # Добавляем дни подписки
         today = localtime().date()
-        extra_days = timedelta(days=product.duration_days)
+        extra_days = product.duration_days
         if player.subscription_end_date and player.subscription_end_date >= today:
-            # Подписка активна — продлеваем от текущей даты окончания
-            player.subscription_end_date += extra_days
+            # Продлеваем существующую подписку
+            player.subscription_end_date += timedelta(days=extra_days)
         else:
-            # Подписки нет или она уже закончилась — начинаем с сегодняшнего дня
-            player.subscription_end_date = today + extra_days
+            # Начинаем новую подписку
+            player.subscription_end_date = today + timedelta(days=extra_days)
         player.paid_subscription = True
-        player.count_days_paid_subscription += product.duration_days
+        player.count_days_paid_subscription += extra_days
         await player.asave(update_fields=['paid_subscription', 'count_days_paid_subscription', 'subscription_end_date'])
+        logger.info(f"✅ Подписка активирована: +{extra_days} дней для {tg_id}, до {player.subscription_end_date}")
         return True
-    except Player.DoesNotExist:
-        logger.error(f"❌ Игрок с tg_id={tg_id} не найден")
-    except Product.DoesNotExist:
-        logger.error(f"❌ Продукт с id={product_id} не найден")
+    except Purchase.DoesNotExist:
+        logger.error(f"❌ Покупка не найдена: {payment_id}")
+        return False
     except Exception as e:
-        logger.error(f"❌ Ошибка при создании покупки: {str(e)}")
-    return False
+        logger.error(f"❌ Ошибка активации подписки: {str(e)}")
+        return False

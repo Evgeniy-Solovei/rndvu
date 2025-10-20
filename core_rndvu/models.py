@@ -308,9 +308,18 @@ class Product(models.Model):
     duration_days = models.PositiveIntegerField(null=True, blank=True, verbose_name="Количество дней")
     price = models.PositiveIntegerField(verbose_name="Цена в рублях")
 
+    def save(self, *args, **kwargs):
+        # Автоматически устанавливаем duration_days
+        if self.subscription_type == SubscriptionType.MONTHLY:
+            self.duration_days = 30
+        elif self.subscription_type == SubscriptionType.YEARLY:
+            self.duration_days = 365
+
+        super().save(*args, **kwargs)
+
     class Meta:
-        verbose_name = "Продукт"
-        verbose_name_plural = "Продукты"
+        verbose_name = "Подписка"
+        verbose_name_plural = "Подписки"
 
     def __str__(self):
         return self.name
