@@ -238,6 +238,7 @@ class Sympathy(models.Model):
 class Event(models.Model):
     """Ивент для пользователей"""
     DURATION_CHOICES = [
+        (0, 'Время обсудим в диалоге'),
         (1, '1 час'),
         (2, '2 часа'),
         (3, '3 часа'),
@@ -261,6 +262,11 @@ class Event(models.Model):
         ('club', 'Клуб'),
         ('club_and_hotel', 'Клуб и отель'),
         ('travel_together', 'Совместная поездка'),
+        ('any_place_you_wish', 'Любое место по вашему желанию'),
+        ('bachelor_party', 'Мальчишник'),
+        ('bachelorette_party', 'Девичник'),
+        ('to_pair_with_us', 'К нам в пару'),
+        ('has_not_been_selected_yet', 'Место пока не выбрано'),
     ]
 
     CURRENCY_CHOICES = [
