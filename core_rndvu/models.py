@@ -73,7 +73,7 @@ class ProfileMan(models.Model):
     """Модель профиля игрока мужчины"""
     player = models.OneToOneField(Player, on_delete=models.CASCADE, related_name="man_profile", verbose_name="Владелец анкеты")
     birth_date = models.DateField(verbose_name="Дата рождения", validators=[validate_birth_date], blank=True, null=True)
-    about = models.TextField(verbose_name="О себе", max_length=1000, blank=True, null=True)
+    about = models.TextField(verbose_name="О себе", max_length=2000, blank=True, null=True)
 
     class Meta:
         verbose_name = "Мужская анкета"
