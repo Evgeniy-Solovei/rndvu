@@ -138,120 +138,211 @@ class UserProfileView(APIView):
         return await self._update_profile(request, partial=False)
 
     async def _update_profile(self, request, partial=True):
-        """
-        Последовательность:
-          1) Найти профиль игрока (по полу).
-          2) Валидировать и сохранить поля анкеты через async-сериализатор (adrf).
-          3) Обработать файлы:
-             - загрузить новые (form-data key: photos / photos[])
-             - удалить выбранные (form-data key: delete_photo_ids = "1,3,5" или несколько отдельных ключей)
-          4) Перечитать профиль с фото (без лайков/дизлайков) и вернуть.
-        """
-        init_data = availability_init_data(request)
         try:
-            # Игрок по tg_id
+            init_data = availability_init_data(request)
             player = await Player.objects.aget(tg_id=init_data["id"])
             if not player.gender:
                 return Response({"error": "Пол пользователя не указан"}, status=status.HTTP_400_BAD_REQUEST)
+            is_man = player.gender == "Man"
+            # --- Защищаем ORM-запросы ---
+            try:
+                profile = await (ProfileMan.objects.aget(player=player) if is_man else ProfileWoman.objects.aget(player=player))
+            except (ProfileMan.DoesNotExist, ProfileWoman.DoesNotExist):
+                return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
 
-            is_man = (player.gender == "Man")
-            if is_man:
-                # SELECT ProfileMan
-                profile = await ProfileMan.objects.aget(player=player)
-                # Update-сериализатор: читает ТОЛЬКО request.data (текстовая часть multipart)
-                serializer = ProfileUpdateSerializer(
-                    profile, data=request.data, partial=partial,
-                    context={"model": ProfileMan, "request": request},
-                )
-            else:
-                # SELECT ProfileWoman
-                profile = await ProfileWoman.objects.aget(player=player)
-                serializer = ProfileUpdateSerializer(
-                    profile, data=request.data, partial=partial,
-                    context={"model": ProfileWoman, "request": request},
-                )
+            # --- Безопасная валидация сериализатора ---
+            serializer = ProfileUpdateSerializer(
+                profile,
+                data=request.data,
+                partial=partial,
+                context={"model": ProfileMan if is_man else ProfileWoman, "request": request},
+            )
 
             if not serializer.is_valid():
                 return Response({"error": "Ошибка валидации", "details": serializer.errors},
                                 status=status.HTTP_400_BAD_REQUEST)
-            # Сохраняем поля анкеты
+
             await serializer.asave()
 
-            """Если пришли поля из модели Player, то меняем их в БД"""
-            allowed_player_fields = {"first_name", "username", "language_code", "hide_age_in_profile", "hide_age_in_profile", "is_active", "city"}
-            updated = []
-            for field in allowed_player_fields:
-                if field in request.data:
-                    value = request.data.get(field)
-                    setattr(player, field, value)
-                    updated.append(field)
-            if updated:
-                await player.asave(update_fields=updated)
+            # --- Безопасное обновление player ---
+            try:
+                allowed_player_fields = {
+                    "first_name", "username", "language_code",
+                    "hide_age_in_profile", "is_active", "city"
+                }
+                updated = [f for f in allowed_player_fields if f in request.data]
+                for field in updated:
+                    setattr(player, field, request.data.get(field))
+                if updated:
+                    await player.asave(update_fields=updated)
+            except Exception as e:
+                return Response({"error": f"Ошибка при обновлении игрока: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-            """Файлы: загрузка/удаление"""
-            # Получаем файлы (если есть)
-            files = []
-            if request.FILES:
+            # --- Безопасная работа с файлами ---
+            try:
                 files = request.FILES.getlist("photos") or request.FILES.getlist("photos[]") or []
+                delete_ids_raw = request.data.get("delete_photo_ids")
+                delete_ids = []
 
-            # УНИВЕРСАЛЬНАЯ обработка delete_photo_ids для JSON и FormData
-            delete_ids = []
-            delete_ids_raw = request.data.get("delete_photo_ids")
+                if delete_ids_raw is not None:
+                    if isinstance(delete_ids_raw, list):
+                        delete_ids = [str(x) for x in delete_ids_raw]
+                    elif isinstance(delete_ids_raw, str):
+                        delete_ids = [x.strip() for x in delete_ids_raw.split(",") if x.strip()]
+                    elif isinstance(delete_ids_raw, int):
+                        delete_ids = [str(delete_ids_raw)]
 
-            if delete_ids_raw is not None:
-                if isinstance(delete_ids_raw, list):
-                    # Пришел JSON массив: [1, 2, 3]
-                    delete_ids = [str(x) for x in delete_ids_raw]
-                elif isinstance(delete_ids_raw, str):
-                    # Пришла строка из FormData: "1,2,3"
-                    delete_ids = [x.strip() for x in delete_ids_raw.split(",") if x.strip()]
-                elif isinstance(delete_ids_raw, int):
-                    # Пришел одиночный ID как число
-                    delete_ids = [str(delete_ids_raw)]
+                PhotoModel = ManPhoto if is_man else WomanPhoto
 
-            if is_man:
-                # INSERT новых фото — по одному на файл (asave)
                 for f in files:
-                    obj = ManPhoto(profile=profile, image=f)
-                    await obj.asave()
-                # DELETE выбранных фото (фильтр по своему профилю обязательно)
-                if delete_ids:
-                    await ManPhoto.objects.filter(profile=profile, id__in=delete_ids).adelete()
-            else:
-                # INSERT новых фото для женского профиля
-                for f in files:
-                    obj = WomanPhoto(profile=profile, image=f)
-                    await obj.asave()
-                # DELETE выбранных фото
-                if delete_ids:
-                    await WomanPhoto.objects.filter(profile=profile, id__in=delete_ids).adelete()
+                    try:
+                        obj = PhotoModel(profile=profile, image=f)
+                        await obj.asave()
+                    except Exception as e:
+                        return Response({"error": f"Ошибка при сохранении файла: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 4) Рефетчим профиль для ответа (без лайков/дизлайков)
-            if is_man:
+                if delete_ids:
+                    await PhotoModel.objects.filter(profile=profile, id__in=delete_ids).adelete()
+            except Exception as e:
+                return Response({"error": f"Ошибка при обработке фото: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # --- Повторный запрос профиля ---
+            try:
                 profile_refetched = await (
-                    ProfileMan.objects
+                    (ProfileMan.objects if is_man else ProfileWoman.objects)
                     .select_related("player")
                     .prefetch_related("photos")
                 ).aget(pk=profile.pk)
+            except Exception as e:
+                return Response({"error": f"Ошибка при повторном запросе анкеты: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-                full = FullProfileManSerializer(profile_refetched, context={"request": request})
-            else:
-                profile_refetched = await (
-                    ProfileWoman.objects
-                    .select_related("player")
-                    .prefetch_related("photos")
-                ).aget(pk=profile.pk)
-
-                full = FullProfileWomanSerializer(profile_refetched, context={"request": request})
-
+            serializer_cls = FullProfileManSerializer if is_man else FullProfileWomanSerializer
+            full = serializer_cls(profile_refetched, context={"request": request})
             return Response(full.data, status=status.HTTP_200_OK)
 
-        except (ProfileMan.DoesNotExist, ProfileWoman.DoesNotExist):
-            return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
         except Player.DoesNotExist:
             return Response({"error": "Игрок не найден"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # Ловим любые неучтённые ошибки
+            import traceback
+            print("PATCH ERROR:\n", traceback.format_exc())  # лог в консоль
+            return Response({"error": f"Необработанная ошибка: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # async def _update_profile(self, request, partial=True):
+    #     """
+    #     Последовательность:
+    #       1) Найти профиль игрока (по полу).
+    #       2) Валидировать и сохранить поля анкеты через async-сериализатор (adrf).
+    #       3) Обработать файлы:
+    #          - загрузить новые (form-data key: photos / photos[])
+    #          - удалить выбранные (form-data key: delete_photo_ids = "1,3,5" или несколько отдельных ключей)
+    #       4) Перечитать профиль с фото (без лайков/дизлайков) и вернуть.
+    #     """
+    #     init_data = availability_init_data(request)
+    #     try:
+    #         # Игрок по tg_id
+    #         player = await Player.objects.aget(tg_id=init_data["id"])
+    #         if not player.gender:
+    #             return Response({"error": "Пол пользователя не указан"}, status=status.HTTP_400_BAD_REQUEST)
+
+    #         is_man = (player.gender == "Man")
+    #         if is_man:
+    #             # SELECT ProfileMan
+    #             profile = await ProfileMan.objects.aget(player=player)
+    #             # Update-сериализатор: читает ТОЛЬКО request.data (текстовая часть multipart)
+    #             serializer = ProfileUpdateSerializer(
+    #                 profile, data=request.data, partial=partial,
+    #                 context={"model": ProfileMan, "request": request},
+    #             )
+    #         else:
+    #             # SELECT ProfileWoman
+    #             profile = await ProfileWoman.objects.aget(player=player)
+    #             serializer = ProfileUpdateSerializer(
+    #                 profile, data=request.data, partial=partial,
+    #                 context={"model": ProfileWoman, "request": request},
+    #             )
+
+    #         if not serializer.is_valid():
+    #             return Response({"error": "Ошибка валидации", "details": serializer.errors},
+    #                             status=status.HTTP_400_BAD_REQUEST)
+    #         # Сохраняем поля анкеты
+    #         await serializer.asave()
+
+    #         """Если пришли поля из модели Player, то меняем их в БД"""
+    #         allowed_player_fields = {"first_name", "username", "language_code", "hide_age_in_profile", "hide_age_in_profile", "is_active", "city"}
+    #         updated = []
+    #         for field in allowed_player_fields:
+    #             if field in request.data:
+    #                 value = request.data.get(field)
+    #                 setattr(player, field, value)
+    #                 updated.append(field)
+    #         if updated:
+    #             await player.asave(update_fields=updated)
+
+    #         """Файлы: загрузка/удаление"""
+    #         # Получаем файлы (если есть)
+    #         files = []
+    #         if request.FILES:
+    #             files = request.FILES.getlist("photos") or request.FILES.getlist("photos[]") or []
+
+    #         # УНИВЕРСАЛЬНАЯ обработка delete_photo_ids для JSON и FormData
+    #         delete_ids = []
+    #         delete_ids_raw = request.data.get("delete_photo_ids")
+
+    #         if delete_ids_raw is not None:
+    #             if isinstance(delete_ids_raw, list):
+    #                 # Пришел JSON массив: [1, 2, 3]
+    #                 delete_ids = [str(x) for x in delete_ids_raw]
+    #             elif isinstance(delete_ids_raw, str):
+    #                 # Пришла строка из FormData: "1,2,3"
+    #                 delete_ids = [x.strip() for x in delete_ids_raw.split(",") if x.strip()]
+    #             elif isinstance(delete_ids_raw, int):
+    #                 # Пришел одиночный ID как число
+    #                 delete_ids = [str(delete_ids_raw)]
+
+    #         if is_man:
+    #             # INSERT новых фото — по одному на файл (asave)
+    #             for f in files:
+    #                 obj = ManPhoto(profile=profile, image=f)
+    #                 await obj.asave()
+    #             # DELETE выбранных фото (фильтр по своему профилю обязательно)
+    #             if delete_ids:
+    #                 await ManPhoto.objects.filter(profile=profile, id__in=delete_ids).adelete()
+    #         else:
+    #             # INSERT новых фото для женского профиля
+    #             for f in files:
+    #                 obj = WomanPhoto(profile=profile, image=f)
+    #                 await obj.asave()
+    #             # DELETE выбранных фото
+    #             if delete_ids:
+    #                 await WomanPhoto.objects.filter(profile=profile, id__in=delete_ids).adelete()
+
+    #         # 4) Рефетчим профиль для ответа (без лайков/дизлайков)
+    #         if is_man:
+    #             profile_refetched = await (
+    #                 ProfileMan.objects
+    #                 .select_related("player")
+    #                 .prefetch_related("photos")
+    #             ).aget(pk=profile.pk)
+
+    #             full = FullProfileManSerializer(profile_refetched, context={"request": request})
+    #         else:
+    #             profile_refetched = await (
+    #                 ProfileWoman.objects
+    #                 .select_related("player")
+    #                 .prefetch_related("photos")
+    #             ).aget(pk=profile.pk)
+
+    #             full = FullProfileWomanSerializer(profile_refetched, context={"request": request})
+
+    #         return Response(full.data, status=status.HTTP_200_OK)
+
+    #     except (ProfileMan.DoesNotExist, ProfileWoman.DoesNotExist):
+    #         return Response({"error": "Анкета не найдена"}, status=status.HTTP_404_NOT_FOUND)
+    #     except Player.DoesNotExist:
+    #         return Response({"error": "Игрок не найден"}, status=status.HTTP_404_NOT_FOUND)
+    #     except Exception as e:
+    #         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @user_main_photo_schema
