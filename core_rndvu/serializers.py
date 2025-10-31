@@ -58,6 +58,9 @@ class PlayerFovariteSerializer(ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_birth_date(self, obj):
+        # Проверяем, нужно ли скрывать возраст
+        if hasattr(obj, 'hide_age_in_profile') and obj.hide_age_in_profile:
+            return None
         # Если женщина — берём birth_date из woman_profile
         if obj.gender == "Woman" and hasattr(obj, "woman_profile"):
             return obj.woman_profile.birth_date
@@ -241,12 +244,15 @@ class GameUserSerializer(ModelSerializer):
 
     class Meta:
         model = Player
-        fields = ["id", "tg_id", "first_name", "username", "gender", "city", "is_active", "age", "photos"]
+        fields = ["id", "tg_id", "first_name", "username", "gender", "city", "is_active", "age", "photos", "hide_age_in_profile"]
 
     def get_age(self, obj):
+        # Проверяем, нужно ли скрывать возраст
+        if hasattr(obj, 'hide_age_in_profile') and obj.hide_age_in_profile:
+            return None
         # birth_date может быть добавлен в queryset через annotate/select_related
         birth_date = getattr(obj, "birth_date", None)
-        return calculate_age(birth_date)
+        return calculate_age(birth_date) if birth_date else None
 
     def get_photos(self, obj):
         # Если женщина — берём WomanPhotoSerializer
