@@ -349,17 +349,17 @@ class Purchase(models.Model):
 
 
 class BlacklistUser(models.Model):
-    """Черный список пользователей - админ может добавить пользователя, и он не сможет войти в приложение"""
-    tg_id = models.PositiveBigIntegerField(unique=True, verbose_name="Telegram ID", db_index=True)
+    """Черный список пользователей"""
+    player = models.OneToOneField(Player, on_delete=models.CASCADE, related_name="blacklist_entry", verbose_name="Пользователь", null=True, blank=True)
     reason = models.TextField(verbose_name="Причина блокировки", blank=True, null=True)
     blocked_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата блокировки")
 
     class Meta:
         verbose_name = "Заблокированный пользователь"
-        verbose_name_plural = "Черный список"
+        verbose_name_plural = "Заблокированные пользователи"
         ordering = ['-blocked_at']
-        indexes = [models.Index(fields=["tg_id"])]
 
-    def __str__(self):
-        return f"tg_id: {self.tg_id} (заблокирован {self.blocked_at.strftime('%Y-%m-%d %H:%M')})"
+    def get_player_tg_id(self, obj):
+        return obj.player.tg_id if obj.player else "—"
+    get_player_tg_id.short_description = "Telegram ID"
 

@@ -64,12 +64,12 @@ class AsyncTelegramAuthMiddleware(MiddlewareMixin):
         except json.JSONDecodeError:
             return JsonResponse({"error": "Неверный формат user данных"}, status=400)
         
-        # Проверяем черный список по tg_id
+        # Проверяем черный список по tg_id через связь с Player
         tg_id = request.telegram_user.get("id")
         if tg_id:
             try:
-                # Используем синхронный запрос, так как Django ORM еще не полностью асинхронный для проверки существования
-                is_blocked = await BlacklistUser.objects.filter(tg_id=tg_id).aexists()
+                # Проверяем через связь с Player
+                is_blocked = await BlacklistUser.objects.filter(player__tg_id=tg_id).aexists()
                 if is_blocked:
                     return JsonResponse({"error": "Доступ запрещен. Ваш аккаунт заблокирован администратором."}, status=403)
             except Exception as e:

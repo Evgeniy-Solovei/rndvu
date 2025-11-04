@@ -6,6 +6,7 @@ from core_rndvu.models import *
 class PlayerAdmin(admin.ModelAdmin):
     """Регистрация в админ панели модели Player."""
     list_display = [field.name for field in Player._meta.fields]
+    search_fields = ['tg_id', 'first_name', 'username']  # Для autocomplete в BlacklistUserAdmin
 
 
 @admin.register(ProfileMan)
@@ -77,7 +78,9 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(BlacklistUser)
 class BlacklistUserAdmin(admin.ModelAdmin):
     """Регистрация в админ панели модели BlacklistUser."""
-    list_display = ['tg_id', 'reason', 'blocked_at']
-    list_filter = ['blocked_at']
-    search_fields = ['tg_id', 'reason']
-    readonly_fields = ['blocked_at']
+    list_display = [field.name for field in BlacklistUser._meta.fields]
+    # list_display = ['player', 'reason', 'blocked_at']
+    # list_filter = ['blocked_at']
+    # search_fields = ['player__tg_id', 'player__first_name', 'player__username', 'reason']
+    # readonly_fields = ['blocked_at']
+    # autocomplete_fields = ['player']  # Для удобного поиска пользователя
