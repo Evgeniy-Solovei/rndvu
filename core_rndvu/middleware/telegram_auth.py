@@ -6,6 +6,7 @@ from urllib.parse import parse_qsl, unquote, parse_qs
 from django.http import JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 from logger_conf import logger
+from core_rndvu.models import BlacklistUser
 
 
 EXCLUDED_PATHS = ["/admin/", "/media/", "/static/", "/docs/", "/favicon.ico", "/rndvu/schema/",
@@ -62,4 +63,17 @@ class AsyncTelegramAuthMiddleware(MiddlewareMixin):
             request.telegram_user = json.loads(data["user"])
         except json.JSONDecodeError:
             return JsonResponse({"error": "Неверный формат user данных"}, status=400)
+        
+        # Проверяем черный список по tg_id
+        tg_id = request.telegram_user.get("id")
+        if tg_id:
+            try:
+                # Используем синхронный запрос, так как Django ORM еще не полностью асинхронный для проверки существования
+                is_blocked = await BlacklistUser.objects.filter(tg_id=tg_id).aexists()
+                if is_blocked:
+                    return JsonResponse({"error": "Доступ запрещен. Ваш аккаунт заблокирован администратором."}, status=403)
+            except Exception as e:
+                logger.error(f"Ошибка при проверке черного списка: {e}")
+                # В случае ошибки БД не блокируем пользователя, просто логируем
+        
         return await self.get_response(request)

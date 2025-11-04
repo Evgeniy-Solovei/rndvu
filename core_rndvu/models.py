@@ -347,3 +347,19 @@ class Purchase(models.Model):
     def __str__(self):
         return f"{self.player.tg_id} — {self.product.name}"
 
+
+class BlacklistUser(models.Model):
+    """Черный список пользователей - админ может добавить пользователя, и он не сможет войти в приложение"""
+    tg_id = models.PositiveBigIntegerField(unique=True, verbose_name="Telegram ID", db_index=True)
+    reason = models.TextField(verbose_name="Причина блокировки", blank=True, null=True)
+    blocked_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата блокировки")
+
+    class Meta:
+        verbose_name = "Заблокированный пользователь"
+        verbose_name_plural = "Черный список"
+        ordering = ['-blocked_at']
+        indexes = [models.Index(fields=["tg_id"])]
+
+    def __str__(self):
+        return f"tg_id: {self.tg_id} (заблокирован {self.blocked_at.strftime('%Y-%m-%d %H:%M')})"
+

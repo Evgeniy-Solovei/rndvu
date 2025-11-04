@@ -72,3 +72,12 @@ class PurchaseAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     """Регистрация в админ панели модели Product."""
     list_display = [field.name for field in Product._meta.fields]
+
+
+@admin.register(BlacklistUser)
+class BlacklistUserAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели BlacklistUser."""
+    list_display = ['tg_id', 'reason', 'blocked_at']
+    list_filter = ['blocked_at']
+    search_fields = ['tg_id', 'reason']
+    readonly_fields = ['blocked_at']

@@ -689,8 +689,8 @@ class SympathyView(APIView):
             if sympathy:
                 await sympathy.adelete()
                 return Response({"deleted": True}, status=status.HTTP_200_OK)
-            # Вообще нет симпатии между парой
-            return Response({"deleted": False, "message": "Симпатия не найдена"}, status=status.HTTP_404_NOT_FOUND)
+            # Вообще нет симпатии между парой - это нормально, пользователь просто пропустил профиль
+            return Response({"deleted": False, "message": "Симпатия не найдена"}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
