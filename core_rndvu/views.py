@@ -3,7 +3,7 @@ import math
 
 from adrf.generics import GenericAPIView
 from adrf.views import APIView
-from django.db.models import Prefetch, Count, Q, F, Case, When, DateField
+from django.db.models import Prefetch, Count, Q, F, Case, When, DateField, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
 from drf_spectacular.utils import extend_schema_view
@@ -517,6 +517,14 @@ class GameUsersView(APIView):
             # Исключаем пользователей, с которыми уже есть симпатия (я → он ИЛИ он → я).
             qs = qs.exclude(Q(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
                             |Q(id__in=Sympathy.objects.filter(to_player=player).values_list("from_player_id", flat=True)))
+            
+            # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
+            if opposite_gender == "Man":
+                # Для мужчин: проверяем наличие профиля и фото в man_profile__photos
+                qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+            else:
+                # Для женщин: проверяем наличие профиля и фото в woman_profile__photos
+                qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
             # Аннотируем ЕДИНУЮ дату рождения из соответствующего профиля.
             # Для женщин берём woman_profile.birth_date, для мужчин — man_profile.birth_date.
             # Это даёт одно поле `birth_date_any`, по которому удобно фильтровать и считать возраст.
