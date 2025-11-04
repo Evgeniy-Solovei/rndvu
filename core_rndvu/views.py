@@ -518,6 +518,9 @@ class GameUsersView(APIView):
             qs = qs.exclude(Q(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
                             |Q(id__in=Sympathy.objects.filter(to_player=player).values_list("from_player_id", flat=True)))
             
+            # Исключаем пропущенных пользователей (те, кого мы пропустили)
+            qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
+            
             # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
             if opposite_gender == "Man":
                 # Для мужчин: проверяем наличие профиля и фото в man_profile__photos
@@ -613,24 +616,45 @@ class SympathyView(APIView):
         try:
             # Достаём пользователя, который делает запрос из init data
             player = await Player.objects.aget(tg_id=init_data["id"])
-            # Принимаем от фронта tg_id пользователя, которому делаем симпатию
+            # Принимаем от фронта tg_id пользователя
             tg_id = request.data.get("tg_id")
             if not tg_id:
                 return Response({"error": "Укажите tg_id получателя симпатии"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Проверяем флаг skip (пропустить пользователя)
+            skip = request.data.get("skip", False)
+            if isinstance(skip, str):
+                skip = skip.lower() in ("true", "1", "yes")
+            
             try:
-                # Достаём из БД пользователя который получает симпатию (получатель)
+                # Достаём из БД пользователя
                 recipient = await Player.objects.aget(tg_id=tg_id)
             except Player.DoesNotExist:
                 return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+            
             # Проверяем, что получатель симпатии, не тот кто делает симпатию
             if recipient.tg_id == player.tg_id:
-                return Response({"error": "Нельзя поставить симпатию себе"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "Нельзя оперировать на себе"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Если skip=True, создаём запись о пропуске
+            if skip:
+                # Удаляем симпатию если была (на случай если пользователь передумал)
+                await Sympathy.objects.filter(from_player=player, to_player=recipient).adelete()
+                await Sympathy.objects.filter(from_player=recipient, to_player=player).adelete()
+                # Создаём запись о пропуске
+                await PassedUser.objects.aget_or_create(from_player=player, to_player=recipient)
+                return Response({"message": "Пользователь пропущен", "skipped": True}, status=status.HTTP_200_OK)
+            
+            # Если не skip, создаём симпатию (удаляем запись о пропуске если была)
+            await PassedUser.objects.filter(from_player=player, to_player=recipient).adelete()
+            
             # Ищем запись: recipient → player
             try:
                 # От кого симпатия from_player, получатель симпатии to_player
                 reverse = await Sympathy.objects.select_related("from_player", "to_player").aget(from_player=recipient, to_player=player)
             except Sympathy.DoesNotExist:
                 reverse = None
+            
             if reverse:
                 # Есть симпатия ко мне → уже было от этого пользователя ко мне (НЕ создаём новую)
                 if not reverse.is_mutual:
@@ -641,6 +665,7 @@ class SympathyView(APIView):
                     message = "Симпатия уже взаимная"
                 data = SympathySerializer(reverse).data
                 return Response({"message": message, "sympathy": data}, status=status.HTTP_200_OK)
+            
             # Симпатии от получателя нету → создаём/находим мою направленную запись player → recipient
             obj, created = await Sympathy.objects.aget_or_create(from_player=player, to_player=recipient,
                                                                  defaults={"is_mutual": False})

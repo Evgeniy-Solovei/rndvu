@@ -1,7 +1,9 @@
 from celery import shared_task
-from core_rndvu.models import Player
+from core_rndvu.models import Player, PassedUser
 from logger_conf import logger
 from django.db.models import F
+from django.utils import timezone
+from datetime import timedelta
 
 
 @shared_task(
@@ -22,3 +24,19 @@ def decrement_subscription_days_daily():
     off_count = (Player.objects.filter(paid_subscription=True, count_days_paid_subscription__lte=0).
                  update(paid_subscription=False))
     logger.info(f"Пользователям уменьшили дни: {dec_count}, отключили подписку: {off_count}")
+
+
+@shared_task(
+    acks_late=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3},
+    retry_backoff=True
+)
+def delete_old_passed_users():
+    """
+    Удаляет записи PassedUser, которые старше 1 дня.
+    Это позволяет пропущенным пользователям снова появиться в игре через день.
+    """
+    one_day_ago = timezone.now() - timedelta(days=1)
+    deleted_count, _ = PassedUser.objects.filter(created_at__lt=one_day_ago).delete()
+    logger.info(f"Удалено записей о пропущенных пользователях старше 1 дня: {deleted_count}")

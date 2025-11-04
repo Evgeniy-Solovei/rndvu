@@ -235,6 +235,25 @@ class Sympathy(models.Model):
         return f"{self.from_player.tg_id} {arrow} {self.to_player.tg_id}"
 
 
+class PassedUser(models.Model):
+    """Пропущенные пользователи - когда пользователь нажал "не понравился" (skip)"""
+    from_player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="passed_users", verbose_name="Кто пропустил")
+    to_player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="passed_by_users", verbose_name="Кого пропустили")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата пропуска")
+
+    class Meta:
+        verbose_name = "Пропущенный пользователь"
+        verbose_name_plural = "Пропущенные пользователи"
+        constraints = [
+            models.UniqueConstraint(fields=["from_player", "to_player"], name="unique_passed_from_to"),
+            models.CheckConstraint(check=~models.Q(from_player=models.F("to_player")), name="passed_from_not_to"),
+        ]
+        indexes = [models.Index(fields=["from_player", "created_at"]), models.Index(fields=["to_player"])]
+
+    def __str__(self):
+        return f"{self.from_player.tg_id} пропустил {self.to_player.tg_id}"
+
+
 class Event(models.Model):
     """Ивент для пользователей"""
     DURATION_CHOICES = [

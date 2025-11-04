@@ -79,8 +79,9 @@ class ProductAdmin(admin.ModelAdmin):
 class BlacklistUserAdmin(admin.ModelAdmin):
     """Регистрация в админ панели модели BlacklistUser."""
     list_display = [field.name for field in BlacklistUser._meta.fields]
-    # list_display = ['player', 'reason', 'blocked_at']
-    # list_filter = ['blocked_at']
-    # search_fields = ['player__tg_id', 'player__first_name', 'player__username', 'reason']
-    # readonly_fields = ['blocked_at']
-    # autocomplete_fields = ['player']  # Для удобного поиска пользователя
+
+
+@admin.register(PassedUser)
+class PassedUserAdmin(admin.ModelAdmin):
+    """Регистрация в админ панели модели PassedUser."""
+    list_display = [field.name for field in PassedUser._meta.fields]

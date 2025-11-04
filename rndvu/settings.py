@@ -196,6 +196,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core_rndvu.tasks.decrement_subscription_days_daily",
         "schedule": crontab(0, 0),  # Каждый день в 00:00 обновляем поле subscription_days_daily
     },
+    "delete_passed_users": {
+        "task": "core_rndvu.tasks.delete_old_passed_users",
+        "schedule": crontab(0, 0),  # Каждый день в 00:00 удаляем старые записи о пропущенных пользователях
+    },
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
