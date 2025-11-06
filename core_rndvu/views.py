@@ -511,46 +511,87 @@ class GameUsersView(APIView):
             opposite_gender = "Woman" if player.gender == "Man" else "Man"
             qs = Player.objects.filter(gender=opposite_gender, is_active=True).exclude(id=player.id)
 
-            # Фильтр по городу (если задан)
-            if city:
-                qs = qs.filter(city__icontains=city)
-            # Исключаем пользователей, с которыми уже есть симпатия (я → он ИЛИ он → я).
-            qs = qs.exclude(Q(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
-                            |Q(id__in=Sympathy.objects.filter(to_player=player).values_list("from_player_id", flat=True)))
-            
-            # Исключаем пропущенных пользователей (те, кого мы пропустили)
-            qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
-            
-            # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
-            if opposite_gender == "Man":
-                # Для мужчин: проверяем наличие профиля и фото в man_profile__photos
-                qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+            # Для премиум-пользователей - каталог всех пользователей (не игра)
+            if premium:
+                # Фильтр по городу (если задан)
+                if city:
+                    qs = qs.filter(city__icontains=city)
+                
+                # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
+                if opposite_gender == "Man":
+                    qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+                else:
+                    qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
+                
+                # Аннотируем дату рождения для фильтрации по возрасту
+                qs = qs.annotate(
+                    birth_date_any=Case(When(gender="Man",   then=F("man_profile__birth_date")),
+                                        When(gender="Woman", then=F("woman_profile__birth_date")), output_field=DateField()))
+                
+                # Фильтр по возрасту через сравнение дат рождения
+                today = timezone.localtime()
+
+                def years_ago(years: int):
+                    """Дата 'сегодня минус N лет'; фикс для 29 февраля."""
+                    try:
+                        return today.replace(year=today.year - years)
+                    except ValueError:
+                        return today.replace(month=2, day=28, year=today.year - years)
+
+                if min_age:
+                    upper = years_ago(int(min_age))
+                    qs = qs.filter(birth_date_any__lte=upper)
+
+                if max_age:
+                    lower = years_ago(int(max_age) + 1) + timedelta(days=1)
+                    qs = qs.filter(birth_date_any__gte=lower)
+                
+                # Сортировка по дате регистрации (новые сначала)
+                qs = qs.order_by("-registration_date")
             else:
-                # Для женщин: проверяем наличие профиля и фото в woman_profile__photos
-                qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
-            # Аннотируем ЕДИНУЮ дату рождения из соответствующего профиля.
-            # Для женщин берём woman_profile.birth_date, для мужчин — man_profile.birth_date.
-            # Это даёт одно поле `birth_date_any`, по которому удобно фильтровать и считать возраст.
-            qs = qs.annotate(
-                birth_date_any=Case(When(gender="Man",   then=F("man_profile__birth_date")),
-                                    When(gender="Woman", then=F("woman_profile__birth_date")), output_field=DateField()))
-            # Фильтр по возрасту через сравнение дат рождения
-            today = timezone.localtime()
+                # Для обычных пользователей - игра с фильтрами по симпатиям и пропущенным
+                # Фильтр по городу (если задан)
+                if city:
+                    qs = qs.filter(city__icontains=city)
+                
+                # Исключаем пользователей, с которыми уже есть симпатия (я → он ИЛИ он → я).
+                qs = qs.exclude(Q(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
+                                |Q(id__in=Sympathy.objects.filter(to_player=player).values_list("from_player_id", flat=True)))
+                
+                # Исключаем пропущенных пользователей (те, кого мы пропустили)
+                qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
+                
+                # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
+                if opposite_gender == "Man":
+                    qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+                else:
+                    qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
+                
+                # Аннотируем ЕДИНУЮ дату рождения из соответствующего профиля.
+                qs = qs.annotate(
+                    birth_date_any=Case(When(gender="Man",   then=F("man_profile__birth_date")),
+                                        When(gender="Woman", then=F("woman_profile__birth_date")), output_field=DateField()))
+                
+                # Фильтр по возрасту через сравнение дат рождения
+                today = timezone.localtime()
 
-            def years_ago(years: int):
-                """Дата 'сегодня минус N лет'; фикс для 29 февраля."""
-                try:
-                    return today.replace(year=today.year - years)
-                except ValueError:
-                    return today.replace(month=2, day=28, year=today.year - years)
+                def years_ago(years: int):
+                    """Дата 'сегодня минус N лет'; фикс для 29 февраля."""
+                    try:
+                        return today.replace(year=today.year - years)
+                    except ValueError:
+                        return today.replace(month=2, day=28, year=today.year - years)
 
-            if min_age:
-                upper = years_ago(int(min_age))
-                qs = qs.filter(birth_date_any__lte=upper)
+                if min_age:
+                    upper = years_ago(int(min_age))
+                    qs = qs.filter(birth_date_any__lte=upper)
 
-            if max_age:
-                lower = years_ago(int(max_age) + 1) + timedelta(days=1)
-                qs = qs.filter(birth_date_any__gte=lower)
+                if max_age:
+                    lower = years_ago(int(max_age) + 1) + timedelta(days=1)
+                    qs = qs.filter(birth_date_any__gte=lower)
+                
+                # Случайная выдача для игры
+                qs = qs.order_by("?")
             # ВАЖНО: префетчим фото соответствующего профиля
             if opposite_gender == "Man":
                 # Мужские фото: select_related чтобы иметь сам профиль, и префетч фото
@@ -560,14 +601,6 @@ class GameUsersView(APIView):
                 # Женские фото select_related чтобы иметь сам профиль, и префетч фото
                 qs = qs.select_related("woman_profile").prefetch_related(
                     Prefetch("woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")))
-
-            # Измененная логика сортировки в зависимости от флага premium
-            if premium:
-                # Для премиум-пользователей: сортировка по дате регистрации (новые сначала)
-                qs = qs.order_by("-registration_date")
-            else:
-                # Для обычных пользователей: случайная выдача
-                qs = qs.order_by("?")
 
             # Пагинация
             page_size = 10

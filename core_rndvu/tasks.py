@@ -34,9 +34,9 @@ def decrement_subscription_days_daily():
 )
 def delete_old_passed_users():
     """
-    Удаляет записи PassedUser, которые старше 1 дня.
+    Удаляет записи PassedUser, которые старше 2 дней.
     Это позволяет пропущенным пользователям снова появиться в игре через день.
     """
-    one_day_ago = timezone.now() - timedelta(days=1)
+    one_day_ago = timezone.now() - timedelta(days=2)
     deleted_count, _ = PassedUser.objects.filter(created_at__lt=one_day_ago).delete()
-    logger.info(f"Удалено записей о пропущенных пользователях старше 1 дня: {deleted_count}")
+    logger.info(f"Удалено записей о пропущенных пользователях старше 2 дней: {deleted_count}")
