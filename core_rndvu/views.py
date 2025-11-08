@@ -681,33 +681,32 @@ class SympathyView(APIView):
             # Если не skip, создаём симпатию (удаляем запись о пропуске если была)
             await PassedUser.objects.filter(from_player=player, to_player=recipient).adelete()
             
-            # Ищем запись: recipient → player
+            # Сначала проверяем есть ли обратная симпатия (recipient → player)
+            # Если есть - обновляем её, делая взаимной
             try:
-                # От кого симпатия from_player, получатель симпатии to_player
-                reverse = await Sympathy.objects.select_related("from_player", "to_player").aget(from_player=recipient, to_player=player)
-            except Sympathy.DoesNotExist:
-                reverse = None
-            
-            if reverse:
-                # Есть симпатия ко мне → уже было от этого пользователя ко мне (НЕ создаём новую)
-                if not reverse.is_mutual:
-                    reverse.is_mutual = True
-                    await reverse.asave(update_fields=["is_mutual"])
+                reverse_sympathy = await Sympathy.objects.select_related("from_player", "to_player").aget(from_player=recipient, to_player=player)
+                # Есть обратная симпатия - обновляем её
+                if not reverse_sympathy.is_mutual:
+                    reverse_sympathy.is_mutual = True
+                    await reverse_sympathy.asave(update_fields=["is_mutual"])
                     message = "Совпадение! Взаимная симпатия"
                 else:
                     message = "Симпатия уже взаимная"
-                data = SympathySerializer(reverse).data
+                # Удаляем прямую симпатию если она была создана (чтобы не было дубликатов)
+                await Sympathy.objects.filter(from_player=player, to_player=recipient).adelete()
+                data = SympathySerializer(reverse_sympathy).data
                 return Response({"message": message, "sympathy": data}, status=status.HTTP_200_OK)
-            
-            # Симпатии от получателя нету → создаём/находим мою направленную запись player → recipient
-            obj, created = await Sympathy.objects.aget_or_create(from_player=player, to_player=recipient,
-                                                                 defaults={"is_mutual": False})
-            if not created:
-                # прикрепляем, чтобы сериализатор не лез в БД, мы уже достали из init data player и человека для симпатии recipient
-                obj.from_player = player
-                obj.to_player = recipient
-            message = "Симпатия создана" if created else "Симпатия уже есть"
-            return Response({"message": message, "sympathy": SympathySerializer(obj).data}, status=status.HTTP_200_OK)
+            except Sympathy.DoesNotExist:
+                # Обратной симпатии нет - создаём/находим прямую запись player → recipient
+                obj, created = await Sympathy.objects.aget_or_create(
+                    from_player=player,
+                    to_player=recipient,
+                    defaults={"is_mutual": False}
+                )
+                # Загружаем связанные объекты для сериализатора
+                obj = await Sympathy.objects.select_related("from_player", "to_player").aget(pk=obj.pk)
+                message = "Симпатия создана" if created else "Симпатия уже есть"
+                return Response({"message": message, "sympathy": SympathySerializer(obj).data}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
