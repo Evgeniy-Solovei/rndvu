@@ -554,10 +554,15 @@ class GameUsersView(APIView):
                 if city:
                     qs = qs.filter(city__icontains=city)
 
-                # Исключаем только тех, кому Я поставил симпатию (я → он)
-                # НЕ исключаем тех, кто мне поставил симпатию (он → я), чтобы я мог ответить и сделать взаимной
+                # Исключаем тех, кому Я поставил симпатию (я → он)
+                qs = qs.exclude(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
+                
+                # Исключаем взаимные симпатии (is_mutual=True) - тех, с кем уже есть взаимная симпатия
                 qs = qs.exclude(
-                    id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
+                    Q(id__in=Sympathy.objects.filter(from_player=player, is_mutual=True).values_list("to_player_id", flat=True))
+                    | Q(id__in=Sympathy.objects.filter(to_player=player, is_mutual=True).values_list("from_player_id", flat=True))
+                )
+                
                 # Исключаем пропущенных пользователей (те, кого мы пропустили)
                 qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
                 
