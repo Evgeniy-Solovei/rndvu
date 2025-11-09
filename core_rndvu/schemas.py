@@ -629,16 +629,17 @@ photo_reaction_delete_schema = extend_schema(
 
 game_users_schema = extend_schema(
     tags=["Игра"],
-    summary="Получение пользователей для игры с фильтрацией",
+    summary="Получение пользователей для игры/каталога с фильтрацией",
     description=(
-        "Этот endpoint возвращает пользователей противоположного пола для игры "
-        "с фильтрацией по городу и возрасту. Пагинация по 10 пользователей на страницу.\n\n"
+        "Этот endpoint возвращает пользователей для игры или каталога "
+        "с фильтрацией по полу, городу и возрасту. Пагинация по 10 пользователей на страницу.\n\n"
         "⚠️ Требуется заголовок `X-Init-Data` с init_data от Telegram.\n"
         "Можно включить `X-Test-Mode: true`, чтобы протестировать без Telegram.\n\n"
         "Особенности:\n"
-        "- Возвращаются только пользователи противоположного пола\n"
-        "- Исключаются пользователи с уже существующей симпатией\n"
-        "- Случайный порядок выдачи (random)\n"
+        "- По умолчанию возвращаются пользователи противоположного пола\n"
+        "- Можно выбрать конкретный пол через параметр `gender`\n"
+        "- Для премиум-пользователей доступен полный каталог с сортировкой по дате регистрации\n"
+        "- Для обычных пользователей - игра с исключением симпатий и случайной сортировкой\n"
         "- Поддерживает фильтрацию по городу и возрасту"
     ),
     parameters=[
@@ -655,6 +656,13 @@ game_users_schema = extend_schema(
             location=OpenApiParameter.HEADER,
             required=False,
             description="Если true — работает без проверки Telegram (тестовый режим)"
+        ),
+        OpenApiParameter(
+            name="gender",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description="Фильтр по полу: 'Man' или 'Woman'. Если не указан - показывается противоположный пол"
         ),
         OpenApiParameter(
             name="city",
@@ -684,6 +692,13 @@ game_users_schema = extend_schema(
             required=False,
             description="Номер страницы (по умолчанию 1)"
         ),
+        OpenApiParameter(
+            name="premium",
+            type=bool,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description="Режим премиум-каталога (true/false). Если true - возвращает всех пользователей с сортировкой по дате регистрации, это вкладка пользователей"
+        ),
     ],
     responses={
         200: GameUsersResponseSerializer,
@@ -709,7 +724,6 @@ game_users_schema = extend_schema(
         ),
     }
 )
-
 
 sympathy_schema = extend_schema(
     tags=["Симпатии"],

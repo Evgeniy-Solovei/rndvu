@@ -295,10 +295,16 @@ class Event(models.Model):
         ('RUB', 'rub'),
     ]
 
+    CONDIDATE_CHOICES = [
+        ('Man', 'Парня'),
+        ('Women', 'Девушку'),
+    ]
+
     profile = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='created_events', verbose_name="Создатель ивента")
     city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
     alpha2 = models.IntegerField(null=True, blank=True, verbose_name="Код страны из GeoNames")
     date = models.DateField(verbose_name="Дата ивента", blank=True, null=True)
+    candidate = models.CharField(choices=CONDIDATE_CHOICES, blank=True, null=True, verbose_name="Кого ищут")
     duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Длительность ивента", blank=True, null=True)
     exact_time = models.TimeField(verbose_name="Точное время встречи", blank=True, null=True)
     place = models.CharField(max_length=50, choices=PLACE_CHOICES, verbose_name="Место ивента", blank=True, null=True)
