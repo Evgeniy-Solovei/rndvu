@@ -255,12 +255,29 @@ class GameUserSerializer(ModelSerializer):
         return calculate_age(birth_date) if birth_date else None
 
     def get_photos(self, obj):
-        # Если женщина — берём WomanPhotoSerializer
+        # Если женщина — берём WomanPhotoSerializer, только главное фото
+        # После prefetch_related photos уже загружены в память, используем all() для получения списка
         if obj.gender == "Woman" and hasattr(obj, "woman_profile"):
-            return WomanPhotoSerializer(obj.woman_profile.photos.all(), many=True).data
-        # Если мужчина — берём ManPhotoSerializer
+            photos_list = list(obj.woman_profile.photos.all())
+            # Ищем главное фото в уже загруженном списке
+            main_photo = next((p for p in photos_list if p.main_photo), None)
+            if main_photo:
+                return [WomanPhotoSerializer(main_photo).data]
+            # Если главного фото нет, возвращаем первое фото (для обратной совместимости)
+            if photos_list:
+                return [WomanPhotoSerializer(photos_list[0]).data]
+            return []
+        # Если мужчина — берём ManPhotoSerializer, только главное фото
         if obj.gender == "Man" and hasattr(obj, "man_profile"):
-            return ManPhotoSerializer(obj.man_profile.photos.all(), many=True).data
+            photos_list = list(obj.man_profile.photos.all())
+            # Ищем главное фото в уже загруженном списке
+            main_photo = next((p for p in photos_list if p.main_photo), None)
+            if main_photo:
+                return [ManPhotoSerializer(main_photo).data]
+            # Если главного фото нет, возвращаем первое фото (для обратной совместимости)
+            if photos_list:
+                return [ManPhotoSerializer(photos_list[0]).data]
+            return []
         return []
 
 

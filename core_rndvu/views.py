@@ -194,9 +194,16 @@ class UserProfileView(APIView):
 
                 PhotoModel = ManPhoto if is_man else WomanPhoto
 
+                # Проверяем, есть ли уже главное фото у профиля
+                has_main_photo = await PhotoModel.objects.filter(profile=profile, main_photo=True).aexists()
+                
                 for f in files:
                     try:
                         obj = PhotoModel(profile=profile, image=f)
+                        # Если у профиля еще нет главного фото - делаем первое загруженное главным
+                        if not has_main_photo:
+                            obj.main_photo = True
+                            has_main_photo = True  # Больше не нужно делать главным
                         await obj.asave()
                     except Exception as e:
                         return Response({"error": f"Ошибка при сохранении файла: {e}"}, status=status.HTTP_400_BAD_REQUEST)
@@ -504,12 +511,21 @@ class GameUsersView(APIView):
             max_age = request.query_params.get("max_age")
             page = int(request.query_params.get("page", 1) or 1)
             premium = request.query_params.get("premium", "").lower() == "true"
+            # Параметр для выбора пола: "Man" или "Woman". Если не указан - показываем противоположный пол
+            show_gender = request.query_params.get("gender")
             if page < 1:
                 page = 1
 
-            # Базовый QS: показываем ТОЛЬКО противоположный пол + активные + исключает себя
-            opposite_gender = "Woman" if player.gender == "Man" else "Man"
-            qs = Player.objects.filter(gender=opposite_gender, is_active=True).exclude(id=player.id)
+            # Определяем какой пол показывать
+            if show_gender and show_gender in ["Man", "Woman"]:
+                # Пользователь выбрал конкретный пол
+                target_gender = show_gender
+            else:
+                # По умолчанию показываем противоположный пол (старая логика)
+                target_gender = "Woman" if player.gender == "Man" else "Man"
+            
+            # Базовый QS: показываем выбранный пол + активные + исключает себя
+            qs = Player.objects.filter(gender=target_gender, is_active=True).exclude(id=player.id)
 
             # Для премиум-пользователей - каталог всех пользователей (не игра)
             if premium:
@@ -518,8 +534,11 @@ class GameUsersView(APIView):
                     qs = qs.filter(city__icontains=city)
                 
                 # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
-                # Используем Exists для проверки наличия фото без JOIN (чтобы избежать дубликатов)
-                if opposite_gender == "Man":
+                # Используем Exists вместо JOIN для лучшей производительности:
+                # - Не создает JOIN (быстрее)
+                # - Останавливается на первой найденной записи (не сканирует все фото)
+                # - Не умножает строки результата (не нужен distinct для этого фильтра)
+                if target_gender == "Man":
                     qs = qs.filter(man_profile__isnull=False).filter(
                         Exists(ManPhoto.objects.filter(profile=OuterRef("man_profile")))
                     )
@@ -575,8 +594,11 @@ class GameUsersView(APIView):
                 qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
                 
                 # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
-                # Используем Exists для проверки наличия фото без JOIN (чтобы избежать дубликатов)
-                if opposite_gender == "Man":
+                # Используем Exists вместо JOIN для лучшей производительности:
+                # - Не создает JOIN (быстрее)
+                # - Останавливается на первой найденной записи (не сканирует все фото)
+                # - Не умножает строки результата (не нужен distinct для этого фильтра)
+                if target_gender == "Man":
                     qs = qs.filter(man_profile__isnull=False).filter(
                         Exists(ManPhoto.objects.filter(profile=OuterRef("man_profile")))
                     )
@@ -613,8 +635,8 @@ class GameUsersView(APIView):
                 
                 # Убираем дубликаты после всех фильтров и сортировки
                 qs = qs.distinct()
-            # ВАЖНО: префетчим фото соответствующего профиля
-            if opposite_gender == "Man":
+            # ВАЖНО: префетчим фото соответствующего профиля (загружаем все фото, сериализатор вернет только главное)
+            if target_gender == "Man":
                 # Мужские фото: select_related чтобы иметь сам профиль, и префетч фото
                 qs = qs.select_related("man_profile").prefetch_related(
                     Prefetch("man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")))
