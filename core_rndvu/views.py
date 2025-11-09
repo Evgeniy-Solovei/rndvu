@@ -518,10 +518,15 @@ class GameUsersView(APIView):
                     qs = qs.filter(city__icontains=city)
                 
                 # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
+                # Используем Exists для проверки наличия фото без JOIN (чтобы избежать дубликатов)
                 if opposite_gender == "Man":
-                    qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+                    qs = qs.filter(man_profile__isnull=False).filter(
+                        Exists(ManPhoto.objects.filter(profile=OuterRef("man_profile")))
+                    )
                 else:
-                    qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
+                    qs = qs.filter(woman_profile__isnull=False).filter(
+                        Exists(WomanPhoto.objects.filter(profile=OuterRef("woman_profile")))
+                    )
                 
                 # Аннотируем дату рождения для фильтрации по возрасту
                 qs = qs.annotate(
@@ -548,6 +553,9 @@ class GameUsersView(APIView):
                 
                 # Сортировка по дате регистрации (новые сначала)
                 qs = qs.order_by("-registration_date")
+                
+                # Убираем дубликаты после всех фильтров и сортировки
+                qs = qs.distinct()
             else:
                 # Для обычных пользователей - игра с фильтрами по симпатиям и пропущенным
                 # Фильтр по городу (если задан)
@@ -567,10 +575,15 @@ class GameUsersView(APIView):
                 qs = qs.exclude(id__in=PassedUser.objects.filter(from_player=player).values_list("to_player_id", flat=True))
                 
                 # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
+                # Используем Exists для проверки наличия фото без JOIN (чтобы избежать дубликатов)
                 if opposite_gender == "Man":
-                    qs = qs.filter(man_profile__isnull=False, man_profile__photos__isnull=False).distinct()
+                    qs = qs.filter(man_profile__isnull=False).filter(
+                        Exists(ManPhoto.objects.filter(profile=OuterRef("man_profile")))
+                    )
                 else:
-                    qs = qs.filter(woman_profile__isnull=False, woman_profile__photos__isnull=False).distinct()
+                    qs = qs.filter(woman_profile__isnull=False).filter(
+                        Exists(WomanPhoto.objects.filter(profile=OuterRef("woman_profile")))
+                    )
                 
                 # Аннотируем ЕДИНУЮ дату рождения из соответствующего профиля.
                 qs = qs.annotate(
@@ -597,6 +610,9 @@ class GameUsersView(APIView):
                 
                 # Случайная выдача для игры
                 qs = qs.order_by("?")
+                
+                # Убираем дубликаты после всех фильтров и сортировки
+                qs = qs.distinct()
             # ВАЖНО: префетчим фото соответствующего профиля
             if opposite_gender == "Man":
                 # Мужские фото: select_related чтобы иметь сам профиль, и префетч фото
