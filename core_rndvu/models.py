@@ -19,6 +19,7 @@ class Player(models.Model):
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации игрока")
     hide_age_in_profile = models.BooleanField(default=True, verbose_name="Показывать возраст да/нет")
     is_active = models.BooleanField(default=True, verbose_name="Активный профиль да/нет")
+    show_in_game = models.BooleanField(default=True, verbose_name="Показ в игре да/нет")
     likes_count = models.IntegerField(default=0, verbose_name="Количество лайков профиля")
     dislikes_count = models.IntegerField(default=0, verbose_name="Количество дизлайков профиля")
     paid_subscription = models.BooleanField(default=False, verbose_name="Платная подписка/нет")
@@ -293,6 +294,8 @@ class Event(models.Model):
         ('USDT', 'usdt'),
         ('EUR', 'eur'),
         ('RUB', 'rub'),
+        ('AED', 'aed'),
+        ('GBP', 'gbr'),
     ]
 
     CONDIDATE_CHOICES = [

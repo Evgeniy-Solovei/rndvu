@@ -419,6 +419,13 @@ class UpdateVerificationSerializer(ModelSerializer):
         fields = ['verification']
 
 
+class UpdateShowInGameSerializer(ModelSerializer):
+    """Сериализатор модели Player, для изменения поля показа в игре"""
+    class Meta:
+        model = Player
+        fields = ['show_in_game']
+
+
 class ProductSerializer(ModelSerializer):
     """Сериализатор модели Product, для предоставления информации о продуктах премиум подписки"""
     class Meta:

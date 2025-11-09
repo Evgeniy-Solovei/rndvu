@@ -18,6 +18,7 @@ urlpatterns = [
     path('events/opposite/<int:event_id>/', OppositeGenderEventsView.as_view(), name='opposite-event'),
     path('user-likes/', UserLikeView.as_view(), name='user-likes'),
     path('update-verification/', UpdateVerificationView.as_view(), name='update-verification'),
+    path('update-show-in-game/', UpdateShowInGameView.as_view(), name='update-show-in-game'),
 
     path('product-list/', ProductListView.as_view(), name='product-list'),
     path("payment-create/", CreatePaymentView.as_view(), name='yookassa-create'),

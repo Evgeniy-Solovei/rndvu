@@ -1271,3 +1271,31 @@ update_verification = extend_schema(
         404: OpenApiResponse(description="Пользователь не найден"),
     }
 )
+
+
+update_show_in_game = extend_schema(
+    tags=["Игрок"],
+    summary="Переключение флага показа в игре",
+    description=(
+        "Переключает флаг показа пользователя в игре (show_in_game).\n\n"
+        "⚠️ Требуется заголовок `X-Init-Data` (init_data от Telegram WebApp).\n\n"
+        "Если флаг был True, он станет False, и наоборот.\n"
+        "Не требует передачи параметров в теле запроса."
+    ),
+    responses={
+        200: OpenApiResponse(
+            description="Флаг успешно переключен",
+            examples=[
+                OpenApiExample(
+                    "Пример ответа (было True, стало False)",
+                    value={"show_in_game": False}
+                ),
+                OpenApiExample(
+                    "Пример ответа (было False, стало True)",
+                    value={"show_in_game": True}
+                )
+            ]
+        ),
+        404: OpenApiResponse(description="Пользователь не найден"),
+    }
+)

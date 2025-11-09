@@ -524,8 +524,8 @@ class GameUsersView(APIView):
                 # По умолчанию показываем противоположный пол (старая логика)
                 target_gender = "Woman" if player.gender == "Man" else "Man"
             
-            # Базовый QS: показываем выбранный пол + активные + исключает себя
-            qs = Player.objects.filter(gender=target_gender, is_active=True).exclude(id=player.id)
+            # Базовый QS: показываем выбранный пол + активные + показ в игре + исключает себя
+            qs = Player.objects.filter(gender=target_gender, is_active=True, show_in_game=True).exclude(id=player.id)
 
             # Для премиум-пользователей - каталог всех пользователей (не игра)
             if premium:
@@ -1355,6 +1355,24 @@ class UpdateVerificationView(GenericAPIView):
             return Response({"verification": True})
         except Player.DoesNotExist:
             return Response({"error": "Пользователь не найден"}, status=404)
+
+
+@update_show_in_game
+class UpdateShowInGameView(APIView):
+    """Переключение флага показа в игре пользователя"""
+    
+    async def patch(self, request):
+        init_data = availability_init_data(request)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+            # Переключаем флаг: если True, делаем False, и наоборот
+            player.show_in_game = not player.show_in_game
+            await player.asave(update_fields=["show_in_game"])
+            return Response({"show_in_game": player.show_in_game})
+        except Player.DoesNotExist:
+            return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @product_list
