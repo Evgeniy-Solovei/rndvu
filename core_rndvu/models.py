@@ -291,8 +291,8 @@ class Event(models.Model):
     CURRENCY_CHOICES = [
         ('USD', 'usd'),
         ('USDT', 'usdt'),
-        ('EU', 'eu'),
-        ('RU', 'ru'),
+        ('EUR', 'eur'),
+        ('RUB', 'rub'),
     ]
 
     profile = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='created_events', verbose_name="Создатель ивента")
