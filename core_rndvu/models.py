@@ -330,6 +330,7 @@ class Event(models.Model):
 
 class SubscriptionType(models.TextChoices):
     """Срок подписки"""
+    WEEK = "week", "1 неделя"
     MONTHLY = "monthly", "1 месяц"
     YEARLY = "yearly", "1 год"
 
