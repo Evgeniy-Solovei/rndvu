@@ -13,11 +13,12 @@ class PlayerSerializer(ModelSerializer):
     """Сериализатор модели Player"""
     gender_choices = SerializerMethodField()
     like_ratio = serializers.FloatField(read_only=True)
+    main_photo = SerializerMethodField()
 
     class Meta:
         model = Player
         fields = "__all__"
-        read_only_fields = ['like_ratio']
+        read_only_fields = ['like_ratio', 'main_photo']
 
     @extend_schema_field(list[OpenApiTypes.OBJECT])
     def get_gender_choices(self, obj):
@@ -25,6 +26,21 @@ class PlayerSerializer(ModelSerializer):
             {"value": value, "label": label}
             for value, label in Player._meta.get_field("gender").choices
         ]
+
+    def _extract_main_photo(self, photos_queryset):
+        photos_list = list(photos_queryset)
+        main = next((p for p in photos_list if p.main_photo), None) or (photos_list[0] if photos_list else None)
+        return main
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_main_photo(self, obj):
+        if obj.gender == "Woman" and hasattr(obj, "woman_profile"):
+            main = self._extract_main_photo(obj.woman_profile.photos.all())
+            return WomanPhotoSerializer(main).data if main else None
+        if obj.gender == "Man" and hasattr(obj, "man_profile"):
+            main = self._extract_main_photo(obj.man_profile.photos.all())
+            return ManPhotoSerializer(main).data if main else None
+        return None
 
 
 class PlayerFovariteSerializer(ModelSerializer):

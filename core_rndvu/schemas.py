@@ -801,6 +801,8 @@ sympathy_post_schema = extend_schema(
     description=(
         "Создает симпатию к другому пользователю. Если симпатия уже существует "
         "в обратном направлении, устанавливает взаимность.\n\n"
+        "В ответе вложенные пользователи содержат поле `main_photo` — главное фото анкеты "
+        "(или первое, если главное не выставлено).\n\n"
         "Параметры:\n"
         "- tg_id: Telegram ID пользователя, к которому ставится симпатия"
     ),
@@ -821,7 +823,47 @@ sympathy_post_schema = extend_schema(
 
 sympathy_get_schema = extend_schema(
     summary="Получить список взаимных симпатий",
-    description="Возвращает список всех взаимных симпатий, где текущий пользователь является участником.",
+    description=(
+        "Возвращает список всех взаимных симпатий, где текущий пользователь является участником.\n\n"
+        "Каждый вложенный пользователь содержит поле `main_photo` — главное фото анкеты "
+        "(или первое, если главное не выставлено)."
+    ),
+    examples=[
+        OpenApiExample(
+            name="Взаимные симпатии с главным фото",
+            value={
+                "mutual": [
+                    {
+                        "id": 123,
+                        "from_player": {
+                            "tg_id": 111,
+                            "first_name": "Анна",
+                            "gender": "Woman",
+                            "main_photo": {
+                                "id": 10,
+                                "image": "https://.../women_photos/photo.jpg",
+                                "uploaded_at": "2025-11-09T10:00:00Z",
+                                "main_photo": True
+                            },
+                        },
+                        "to_player": {
+                            "tg_id": 222,
+                            "first_name": "Евгений",
+                            "gender": "Man",
+                            "main_photo": {
+                                "id": 20,
+                                "image": "https://.../men_photos/photo.jpg",
+                                "uploaded_at": "2025-11-08T10:00:00Z",
+                                "main_photo": True
+                            },
+                        },
+                        "is_mutual": True,
+                        "created_at": "2025-11-09T12:00:00Z",
+                    }
+                ]
+            },
+        ),
+    ],
     responses={
         200: MutualSympathyResponseSerializer,  # ← СЕРИАЛИЗАТОР ДЛЯ GET
         400: OpenApiResponse(...),
@@ -1275,24 +1317,31 @@ update_verification = extend_schema(
 
 update_show_in_game = extend_schema(
     tags=["Игрок"],
-    summary="Переключение флага показа в игре",
+    summary="Изменение флага показа в игре",
     description=(
-        "Переключает флаг показа пользователя в игре (show_in_game).\n\n"
+        "Изменяет флаг показа пользователя в игре (show_in_game).\n\n"
         "⚠️ Требуется заголовок `X-Init-Data` (init_data от Telegram WebApp).\n\n"
-        "Если флаг был True, он станет False, и наоборот.\n"
-        "Не требует передачи параметров в теле запроса."
+        "Параметры:\n"
+        "- show_in_game: булево значение (true/false) для показа в игре"
     ),
+    request=UpdateShowInGameSerializer,
     responses={
         200: OpenApiResponse(
-            description="Флаг успешно переключен",
+            description="Флаг успешно изменен",
             examples=[
                 OpenApiExample(
-                    "Пример ответа (было True, стало False)",
-                    value={"show_in_game": False}
-                ),
-                OpenApiExample(
-                    "Пример ответа (было False, стало True)",
+                    "Пример ответа",
                     value={"show_in_game": True}
+                )
+            ]
+        ),
+        400: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="Неверные данные или ошибка валидации",
+            examples=[
+                OpenApiExample(
+                    "Ошибка валидации",
+                    value={"error": "Ошибка валидации", "details": {"show_in_game": ["Обязательное поле"]}}
                 )
             ]
         ),

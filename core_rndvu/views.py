@@ -727,7 +727,17 @@ class SympathyView(APIView):
             # Сначала проверяем есть ли обратная симпатия (recipient → player)
             # Если есть - обновляем её, делая взаимной
             try:
-                reverse_sympathy = await Sympathy.objects.select_related("from_player", "to_player").aget(from_player=recipient, to_player=player)
+                reverse_sympathy = await (
+                    Sympathy.objects
+                    .select_related("from_player", "to_player", "from_player__man_profile", "from_player__woman_profile",
+                                    "to_player__man_profile", "to_player__woman_profile")
+                    .prefetch_related(
+                        Prefetch("from_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("to_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("from_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("to_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                    )
+                ).aget(from_player=recipient, to_player=player)
                 # Есть обратная симпатия - обновляем её
                 if not reverse_sympathy.is_mutual:
                     reverse_sympathy.is_mutual = True
@@ -747,7 +757,17 @@ class SympathyView(APIView):
                     defaults={"is_mutual": False}
                 )
                 # Загружаем связанные объекты для сериализатора
-                obj = await Sympathy.objects.select_related("from_player", "to_player").aget(pk=obj.pk)
+                obj = await (
+                    Sympathy.objects
+                    .select_related("from_player", "to_player", "from_player__man_profile", "from_player__woman_profile",
+                                    "to_player__man_profile", "to_player__woman_profile")
+                    .prefetch_related(
+                        Prefetch("from_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("to_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("from_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                        Prefetch("to_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                    )
+                ).aget(pk=obj.pk)
                 message = "Симпатия создана" if created else "Симпатия уже есть"
                 return Response({"message": message, "sympathy": SympathySerializer(obj).data}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -760,8 +780,25 @@ class SympathyView(APIView):
             player = await Player.objects.aget(tg_id=init_data["id"])
 
             # Только взаимные пары, где я участник
-            qs = (Sympathy.objects.filter(is_mutual=True).filter(Q(from_player=player) | Q(to_player=player))
-                  .select_related("from_player", "to_player").order_by("-created_at"))
+            qs = (
+                Sympathy.objects.filter(is_mutual=True)
+                .filter(Q(from_player=player) | Q(to_player=player))
+                .select_related(
+                    "from_player",
+                    "to_player",
+                    "from_player__man_profile",
+                    "from_player__woman_profile",
+                    "to_player__man_profile",
+                    "to_player__woman_profile",
+                )
+                .prefetch_related(
+                    Prefetch("from_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                    Prefetch("to_player__man_profile__photos", queryset=ManPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                    Prefetch("from_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                    Prefetch("to_player__woman_profile__photos", queryset=WomanPhoto.objects.only("id", "image", "uploaded_at", "main_photo")),
+                )
+                .order_by("-created_at")
+            )
             items = [s async for s in qs.aiterator()]
             data = SympathySerializer(items, many=True).data
             return Response({"mutual": data}, status=status.HTTP_200_OK)
@@ -1358,17 +1395,22 @@ class UpdateVerificationView(GenericAPIView):
 
 
 @update_show_in_game
-class UpdateShowInGameView(APIView):
-    """Переключение флага показа в игре пользователя"""
+class UpdateShowInGameView(GenericAPIView):
+    """Обновление флага показа в игре пользователя"""
+    serializer_class = UpdateShowInGameSerializer
     
     async def patch(self, request):
         init_data = availability_init_data(request)
         try:
             player = await Player.objects.aget(tg_id=init_data["id"])
-            # Переключаем флаг: если True, делаем False, и наоборот
-            player.show_in_game = not player.show_in_game
-            await player.asave(update_fields=["show_in_game"])
-            return Response({"show_in_game": player.show_in_game})
+            serializer = self.get_serializer(player, data=request.data, partial=True)
+            if serializer.is_valid():
+                await serializer.asave()
+                # Обновляем объект из БД для получения актуального значения
+                await player.arefresh_from_db()
+                return Response({"show_in_game": player.show_in_game})
+            return Response({"error": "Ошибка валидации", "details": serializer.errors}, 
+                          status=status.HTTP_400_BAD_REQUEST)
         except Player.DoesNotExist:
             return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
