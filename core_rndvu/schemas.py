@@ -1122,13 +1122,45 @@ event_get_schema = extend_schema(
 event_post_schema = extend_schema(
     tags=["Ивенты"],
     summary="Создать новый ивент",
-    description="Создает новый ивент текущего пользователя",
+    description=(
+        "Создает новый ивент текущего пользователя.\n\n"
+        "Поля с choices:\n"
+        "- candidate: Man/Women\n"
+        "- duration: 0, 1, 2, 3, 4, 5, 24\n"
+        "- place: restaurant, cafe, hotel, apartments, restaurant_and_apartments, yacht, villa, "
+        "bath_complex, private_house, country_complex, private_sector, club, club_and_hotel, "
+        "travel_together, any_place_you_wish, bachelor_party, bachelorette_party, to_pair_with_us, "
+        "has_not_been_selected_yet\n"
+        "- gift: I've got a gift / I want a gift\n"
+        "- currency: USD, USDT, EUR, RUB, AED, GBP"
+    ),
     parameters=[
         OpenApiParameter("X-Init-Data", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True),
         OpenApiParameter("X-Test-Mode", OpenApiTypes.STR, OpenApiParameter.HEADER, required=False),
     ],
     request=EventSerializer,
-    responses={200: EventSerializer}
+    responses={200: EventSerializer},
+    examples=[
+        OpenApiExample(
+            name="Пример создания ивента",
+            value={
+                "city": 524901,
+                "alpha2": 643,
+                "date": "2024-12-31",
+                "candidate": "Women",
+                "duration": 2,
+                "exact_time": "19:00:00",
+                "place": "restaurant",
+                "gift": "I've got a gift",
+                "min_age": 21,
+                "max_age": 35,
+                "currency": "USD",
+                "reward": 150,
+                "description": "Ужин в центре"
+            },
+            request_only=True,
+        )
+    ],
 )
 
 event_patch_schema = extend_schema(

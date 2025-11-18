@@ -303,6 +303,11 @@ class Event(models.Model):
         ('Women', 'Девушку'),
     ]
 
+    GIFT_CHOICES = [
+        ("I've got a gift", 'С меня подарок'),
+        ('I want a gift', 'Хочу подарок'),
+    ]
+
     profile = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='created_events', verbose_name="Создатель ивента")
     city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
     alpha2 = models.IntegerField(null=True, blank=True, verbose_name="Код страны из GeoNames")
@@ -311,6 +316,7 @@ class Event(models.Model):
     duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Длительность ивента", blank=True, null=True)
     exact_time = models.TimeField(verbose_name="Точное время встречи", blank=True, null=True)
     place = models.CharField(max_length=50, choices=PLACE_CHOICES, verbose_name="Место ивента", blank=True, null=True)
+    gift = models.CharField(max_length=50, choices=GIFT_CHOICES, verbose_name="Кто дарит подарок", blank=True, null=True)
     min_age = models.IntegerField(default=18, validators=[MinValueValidator(18), MaxValueValidator(99)], verbose_name="Минимальный возраст")
     max_age = models.IntegerField(default=99, validators=[MinValueValidator(18), MaxValueValidator(99)], verbose_name="Максимальный возраст")
     currency = models.CharField(max_length=60, choices=CURRENCY_CHOICES, blank=True, null=True, verbose_name='Валюта награды за ивент')
