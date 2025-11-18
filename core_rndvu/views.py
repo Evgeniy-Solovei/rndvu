@@ -40,8 +40,16 @@ class PlayerInfoView(APIView):
                     "language_code": init_data.get("language_code") or "ru",
                 }
             )
+            # Чтобы сериализация не дергала синхронные запросы, подтягиваем связанные профили и фото
+            player = await (
+                Player.objects
+                .select_related("man_profile", "woman_profile")
+                .prefetch_related("man_profile__photos", "woman_profile__photos")
+            ).aget(id=player.id)
+
             if not player.gender:
                 created = True
+
             return Response({"created": created, "player": PlayerSerializer(player).data}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": "Ошибка при создании/получении игрока", "details": str(e)},
