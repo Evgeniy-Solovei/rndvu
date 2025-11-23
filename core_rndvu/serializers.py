@@ -27,19 +27,28 @@ class PlayerSerializer(ModelSerializer):
             for value, label in Player._meta.get_field("gender").choices
         ]
 
-    def _extract_main_photo(self, photos_queryset):
-        photos_list = list(photos_queryset)
+    async def _extract_main_photo(self, photos_queryset):
+        # Используем асинхронную итерацию
+        photos_list = []
+        async for photo in photos_queryset:
+            photos_list.append(photo)
+
         main = next((p for p in photos_list if p.main_photo), None) or (photos_list[0] if photos_list else None)
         return main
 
     @extend_schema_field(OpenApiTypes.OBJECT)
-    def get_main_photo(self, obj):
+    async def get_main_photo(self, obj):
         if obj.gender == "Woman" and hasattr(obj, "woman_profile"):
-            main = self._extract_main_photo(obj.woman_profile.photos.all())
+            # Асинхронный запрос к фото
+            photos_queryset = obj.woman_profile.photos.all()
+            main = await self._extract_main_photo(photos_queryset)
             return WomanPhotoSerializer(main).data if main else None
+
         if obj.gender == "Man" and hasattr(obj, "man_profile"):
-            main = self._extract_main_photo(obj.man_profile.photos.all())
+            photos_queryset = obj.man_profile.photos.all()
+            main = await self._extract_main_photo(photos_queryset)
             return ManPhotoSerializer(main).data if main else None
+
         return None
 
 
