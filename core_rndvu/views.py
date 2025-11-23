@@ -70,8 +70,11 @@ class PlayerGenderUpdateView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST)
 
             # Берём игрока вместе с профилями/фото, чтобы сериализация не дёргала sync ORM
-            player = await (Player.objects.select_related("man_profile", "woman_profile")
-                .prefetch_related("man_profile__photos", "woman_profile__photos")).aget(tg_id=init_data["id"])
+            player = await (
+                Player.objects
+                .select_related("man_profile", "woman_profile")
+                .prefetch_related("man_profile__photos", "woman_profile__photos")
+            ).aget(tg_id=init_data["id"])
             player.gender = gender
             await player.asave(update_fields=["gender"])
 
@@ -80,11 +83,16 @@ class PlayerGenderUpdateView(APIView):
                 if gender == "Man":
                     profile, created = await ProfileMan.objects.aget_or_create(player=player)
                     serializer = ProfileManSerializer(profile)
-                    player.man_profile = profile  # прокидываем в кеш экземпляра для сериализации
+                    if created or not getattr(player, "man_profile", None):
+                        # чтобы PlayerSerializer не дергал sync .photos.all() в async-вью
+                        profile._prefetched_objects_cache = {"photos": []}
+                        player.man_profile = profile
                 else:
                     profile, created = await ProfileWoman.objects.aget_or_create(player=player)
                     serializer = ProfileWomanSerializer(profile)
-                    player.woman_profile = profile
+                    if created or not getattr(player, "woman_profile", None):
+                        profile._prefetched_objects_cache = {"photos": []}
+                        player.woman_profile = profile
 
                 return Response({
                     "player": PlayerSerializer(player).data,
