@@ -60,35 +60,41 @@ class PlayerInfoView(APIView):
 class PlayerGenderUpdateView(APIView):
     """Ручка для обновления gender у пользователя"""
     async def post(self, request):
-        # Достаём данные игрока из init_data
-        init_data = availability_init_data(request)
         try:
-            # Достаём гендер от фронта
+            # Достаём данные игрока из init_data
+            init_data = availability_init_data(request)
             gender = request.data.get("gender")
-            # Проверка допустимых значений чойсов
+
             if gender not in ['Man', 'Woman']:
-                return Response({"error": "Параметр gender обязателен (Man, Woman)"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "Параметр gender обязателен (Man, Woman)"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
             player = await Player.objects.aget(tg_id=init_data["id"])
             player.gender = gender
             await player.asave(update_fields=["gender"])
-            # Если пользователь мужчина, создаём мужскую анкету
-            if gender == "Man":
-                try:
-                    profile = await ProfileMan.objects.aget(player=player)
-                except ProfileMan.DoesNotExist:
-                    profile = ProfileMan(player=player)
-                    await profile.asave()
-                serializer = ProfileManSerializer(profile)
-            # Если пользователь женщина, создаём женскую анкету
-            else:
-                try:
-                    profile = await ProfileWoman.objects.aget(player=player)
-                except ProfileWoman.DoesNotExist:
-                    profile = ProfileWoman(player=player)
-                    await profile.asave()
-                serializer = ProfileWomanSerializer(profile)
-            return Response({"player": PlayerSerializer(player).data, "profile": serializer.data,},
-                            status=status.HTTP_200_OK)
+
+            # Отдельно обрабатываем создание профиля
+            try:
+                if gender == "Man":
+                    profile, created = await ProfileMan.objects.aget_or_create(player=player)
+                    serializer = ProfileManSerializer(profile)
+                else:
+                    profile, created = await ProfileWoman.objects.aget_or_create(player=player)
+                    serializer = ProfileWomanSerializer(profile)
+
+                return Response({
+                    "player": PlayerSerializer(player).data,
+                    "profile": serializer.data,
+                }, status=status.HTTP_200_OK)
+
+            except Exception as profile_error:
+                # Если ошибка в профиле, но игрок обновлён - возвращаем успех
+                return Response({
+                    "player": PlayerSerializer(player).data,
+                    "profile": None,
+                    "warning": "Player updated but profile creation failed"
+                }, status=status.HTTP_200_OK)
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
