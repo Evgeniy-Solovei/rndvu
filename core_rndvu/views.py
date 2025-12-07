@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from core_rndvu.models import *
 from core_rndvu.schemas import *
 from core_rndvu.serializers import *
+from core_rndvu.utils.image_utils import optimize_image
 from core_rndvu.yookassa_webhook import create_yookassa_payment
 
 
@@ -225,7 +226,8 @@ class UserProfileView(APIView):
                 
                 for f in files:
                     try:
-                        obj = PhotoModel(profile=profile, image=f)
+                        optimized = optimize_image(f)
+                        obj = PhotoModel(profile=profile, image=optimized)
                         # Если у профиля еще нет главного фото - делаем первое загруженное главным
                         if not has_main_photo:
                             obj.main_photo = True
