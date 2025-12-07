@@ -929,7 +929,12 @@ class FavoriteView(APIView):
                 return Response({"error": "Укажите tg_id"}, status=status.HTTP_400_BAD_REQUEST)
 
             try:
-                target = await Player.objects.aget(tg_id=tg_id)
+                # Вытягиваем профили и фото сразу, чтобы сериализатор не делал sync ORM в async-контексте
+                target = await (
+                    Player.objects
+                    .select_related("man_profile", "woman_profile")
+                    .prefetch_related("man_profile__photos", "woman_profile__photos")
+                ).aget(tg_id=tg_id)
             except Player.DoesNotExist:
                 return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
 
