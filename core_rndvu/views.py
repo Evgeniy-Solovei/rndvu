@@ -7,7 +7,7 @@ from adrf.views import APIView
 from django.db.models import Prefetch, Count, Q, F, Case, When, DateField, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
-from drf_spectacular.utils import extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -25,6 +25,22 @@ def availability_init_data(request):
     if not init_data:
         return Response({"error": "Требуется авторизация через Telegram"}, status=status.HTTP_401_UNAUTHORIZED)
     return init_data
+
+
+@extend_schema(**player_delete_schema)
+class PlayerDeleteView(APIView):
+    """Удаление игрока и всех связанных данных (анкеты, фото, лайки, ивенты и т.п.)."""
+    async def delete(self, request):
+        init_data = availability_init_data(request)
+        if not init_data:
+            return Response({"error": "Не авторизован"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            player = await Player.objects.aget(tg_id=init_data["id"])
+        except Player.DoesNotExist:
+            return Response({"error": "Пользователь не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+        await player.adelete()
+        return Response({"message": "Пользователь и связанные данные удалены"}, status=status.HTTP_200_OK)
 
 
 @player_info_schema

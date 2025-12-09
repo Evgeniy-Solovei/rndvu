@@ -63,6 +63,47 @@ player_info_schema = extend_schema(
 )
 
 
+player_delete_schema = dict(
+    tags=["Игрок"],
+    summary="Удалить игрока и все связанные данные",
+    description=(
+        "Удаляет текущего авторизованного игрока и все связанные сущности "
+        "(анкеты, фото, лайки/дизлайки, избранные, симпатии, ивенты и т.д.) через каскадные связи."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="X-Init-Data",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=True,
+            description="Строка init_data от Telegram WebApp (Telegram.WebApp.initData)"
+        ),
+        OpenApiParameter(
+            name="X-Test-Mode",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=False,
+            description="Если true — работает без проверки Telegram (тестовый режим)"
+        ),
+    ],
+    responses={
+        200: inline_serializer(
+            name="PlayerDeleteResponse",
+            fields={"message": serializers.CharField()}
+        ),
+        401: OpenApiResponse(
+            description="Пользователь не авторизован",
+            response=OpenApiTypes.OBJECT,
+            examples=[OpenApiExample(name="Не авторизован", value={"error": "Не авторизован"})],
+        ),
+        404: OpenApiResponse(
+            description="Пользователь не найден",
+            response=OpenApiTypes.OBJECT,
+            examples=[OpenApiExample(name="Не найден", value={"error": "Пользователь не найден"})],
+        ),
+    }
+)
+
 
 player_gender_update_schema = extend_schema(
     tags=["Игрок"],

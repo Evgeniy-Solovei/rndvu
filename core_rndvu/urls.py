@@ -4,6 +4,7 @@ from core_rndvu.yookassa_webhook import *
 
 urlpatterns = [
     path('player-info/', PlayerInfoView.as_view(), name='player_info'),
+    path("player/delete/", PlayerDeleteView.as_view(), name='player_delete'),
     path("player/gender/", PlayerGenderUpdateView.as_view(), name='player_gender'),
     path("player/profile/", UserProfileView.as_view(), name='user_profile'),
     path("player/main_photo/", UserMainPhotoView.as_view(), name='user_profile'),
