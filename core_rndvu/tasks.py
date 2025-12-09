@@ -1,9 +1,15 @@
+import asyncio
+import os
+from datetime import timedelta
+
+from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from celery import shared_task
-from core_rndvu.models import Player, PassedUser
-from logger_conf import logger
 from django.db.models import F
 from django.utils import timezone
-from datetime import timedelta
+from core_rndvu.models import Event, PassedUser, Player
+from logger_conf import logger
 
 
 @shared_task(
@@ -40,3 +46,60 @@ def delete_old_passed_users():
     one_day_ago = timezone.now() - timedelta(days=2)
     deleted_count, _ = PassedUser.objects.filter(created_at__lt=one_day_ago).delete()
     logger.info(f"Удалено записей о пропущенных пользователях старше 2 дней: {deleted_count}")
+
+
+async def _send_event_notifications(players, text):
+    """
+    Асинхронно отправляем сообщения всем нужным пользователям.
+    Вызывается из Celery через asyncio.run().
+    """
+    token = os.getenv("TOKEN")
+    if not token:
+        logger.warning("Нет TOKEN в окружении — рассылка ивента пропущена")
+        return
+
+    bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    async with bot:
+        for player in players:
+            try:
+                await bot.send_message(chat_id=player["tg_id"], text=text, disable_web_page_preview=True)
+            except Exception as exc:
+                logger.warning(f"Не удалось отправить сообщение {player['tg_id']}: {exc}")
+
+
+@shared_task(
+    acks_late=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3},
+    retry_backoff=True
+)
+def notify_opposite_gender_about_event(event_id: int):
+    """
+    После создания ивента отправляем тестовое сообщение всем пользователям
+    противоположного пола. Используем Celery, чтобы не блокировать запрос.
+    """
+    try:
+        event = Event.objects.select_related("profile").get(id=event_id)
+    except Event.DoesNotExist:
+        logger.warning(f"Ивент {event_id} не найден — рассылка пропущена")
+        return
+
+    creator = event.profile
+    if not creator.gender:
+        logger.info(f"У создателя ивента {event_id} не указан пол — рассылка пропущена")
+        return
+
+    target_gender = "Woman" if creator.gender == "Man" else "Man"
+    players = list(
+        Player.objects.filter(
+            gender=target_gender,
+            is_active=True,
+            show_in_game=True,
+        ).exclude(id=creator.id).values("tg_id")
+    )
+    if not players:
+        logger.info(f"Нет получателей для ивента {event_id}")
+        return
+
+    text = "Новый ивент! Загляни в приложение, чтобы посмотреть детали."
+    asyncio.run(_send_event_notifications(players, text))

@@ -14,6 +14,8 @@ from pathlib import Path
 import redis
 from celery.schedules import crontab
 from dotenv import load_dotenv
+from copy import deepcopy
+from django.utils.log import DEFAULT_LOGGING
 from corsheaders.defaults import default_headers, default_methods
 
 load_dotenv()
@@ -225,3 +227,12 @@ SPECTACULAR_SETTINGS = {
 }
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+LOGGING = deepcopy(DEFAULT_LOGGING)
+LOGGING["handlers"]["null"] = {"class": "logging.NullHandler"}
+# Скрываем шумные DisallowedHost от сканеров без заголовка Host
+LOGGING["loggers"]["django.security.DisallowedHost"] = {
+    "handlers": ["null"],
+    "level": "CRITICAL",
+    "propagate": False,
+}

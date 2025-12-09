@@ -1,3 +1,4 @@
+import asyncio
 import json
 import math
 
@@ -11,6 +12,7 @@ from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from core_rndvu.models import *
+from core_rndvu.tasks import notify_opposite_gender_about_event
 from core_rndvu.schemas import *
 from core_rndvu.serializers import *
 from core_rndvu.utils.image_utils import optimize_image
@@ -1052,7 +1054,11 @@ class EventPlayerView(APIView):
                 return Response(serializer.data)
             else:
                 # Получить все активные ивенты пользователя
-                events = Event.objects.select_related("profile").filter(profile=player, is_active=True)
+                today = timezone.now().date()
+                events = Event.objects.select_related("profile").filter(
+                    profile=player,
+                    is_active=True
+                ).filter(Q(date__isnull=True) | Q(date__gte=today))
                 event_list = [event async for event in events.aiterator()]
                 serializer = EventSerializer(event_list, many=True)
                 return Response(serializer.data)
@@ -1071,6 +1077,8 @@ class EventPlayerView(APIView):
             if serializer.is_valid():
                 # Сохраняем с создателем
                 event = await Event.objects.acreate(profile=player, **serializer.validated_data)
+                # Тригерим рассылку через Celery в отдельном потоке, чтобы не блокировать event loop
+                asyncio.create_task(asyncio.to_thread(notify_opposite_gender_about_event.delay, event.id))
                 return Response(EventSerializer(event).data, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
