@@ -1194,7 +1194,8 @@ opposite_gender_events_get_schema = extend_schema(
     description=(
         "Возвращает список активных ивентов противоположного пола текущего пользователя.\n\n"
         "Можно передать фильтры:\n"
-        "- city — фильтр по городу\n"
+        "- alpha2 — фильтр по стране (GeoNames alpha2)\n"
+        "- city — фильтр по городу (GeoNames city id)\n"
         "- min_age — минимальный возраст участников\n"
         "- max_age — максимальный возраст участников\n"
         "- page — номер страницы пагинации\n\n"
@@ -1202,6 +1203,7 @@ opposite_gender_events_get_schema = extend_schema(
     ),
     parameters=[
         OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=False),
+        OpenApiParameter("alpha2", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("city", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("min_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("max_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),

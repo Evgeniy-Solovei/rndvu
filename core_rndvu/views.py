@@ -1182,31 +1182,53 @@ class OppositeGenderEventsView(APIView):
                 profile__gender=opposite_gender
             ).exclude(profile=current_player))
 
+            # Фильтр по стране (alpha2 из GeoNames), если передан
+            alpha2 = request.GET.get('alpha2')
+            if alpha2 and alpha2.strip():
+                try:
+                    alpha2_int = int(alpha2)
+                    events_query = events_query.filter(alpha2=alpha2_int)
+                except ValueError:
+                    pass
+
             # Фильтр по городу (если передан)
             city = request.GET.get('city')
             if city and city.strip():
-                events_query = events_query.filter(city__iexact=city.strip())
+                try:
+                    city_int = int(city)
+                    events_query = events_query.filter(city=city_int)
+                except ValueError:
+                    pass
 
             # Фильтр по минимальному возрасту (по умолчанию 18)
             min_age_filter = request.GET.get('min_age', '18')
             try:
                 min_age = int(min_age_filter)
-                events_query = events_query.filter(min_age__gte=min_age)
+                min_age = max(min_age, 18)
             except ValueError:
-                events_query = events_query.filter(min_age__gte=18)
+                min_age = 18
 
             # Фильтр по максимальному возрасту (по умолчанию 99)
             max_age_filter = request.GET.get('max_age', '99')
             try:
                 max_age = int(max_age_filter)
-                events_query = events_query.filter(max_age__lte=max_age)
+                max_age = min(max_age, 99)
             except ValueError:
-                events_query = events_query.filter(max_age__lte=99)
+                max_age = 99
+
+            # Пересечение возрастных диапазонов: (min_age_event <= max_age_filter) и (max_age_event >= min_age_filter)
+            events_query = events_query.filter(
+                Q(min_age__lte=max_age) & Q(max_age__gte=min_age)
+            )
 
             # Фильтр по верификации - только если явно запрошены верифицированные
             verification_filter = request.GET.get('verification')
             if verification_filter and verification_filter.lower() in ['true', '1', 'yes']:
                 events_query = events_query.filter(profile__verification=True)
+
+            # Показываем только ивенты с датой сегодня и позже или без даты
+            today = timezone.now().date()
+            events_query = events_query.filter(Q(date__isnull=True) | Q(date__gte=today))
 
             # Пагинация
             page = int(request.GET.get('page', 1))
