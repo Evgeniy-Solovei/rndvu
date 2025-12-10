@@ -15,7 +15,7 @@ class Player(models.Model):
     language_code = models.CharField(max_length=30, verbose_name="Язык пользователя", default="ru")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name="Пол пользователя", blank=True, null=True)
     city = models.IntegerField(null=True, blank=True, verbose_name="ID города из GeoNames")
-    alpha2 = models.IntegerField(null=True, blank=True, verbose_name="Код страны из GeoNames")
+    alpha2 = models.CharField(max_length=3, null=True, blank=True, verbose_name="Код страны (ISO Alpha-2/Alpha-3)")
     registration_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации игрока")
     hide_age_in_profile = models.BooleanField(default=True, verbose_name="Показывать возраст да/нет")
     is_active = models.BooleanField(default=True, verbose_name="Активный профиль да/нет")
