@@ -1,10 +1,10 @@
 import asyncio
 import os
 from datetime import timedelta
-
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from celery import shared_task
 from django.db.models import F
 from django.utils import timezone
@@ -54,15 +54,29 @@ async def _send_event_notifications(players, text):
     Вызывается из Celery через asyncio.run().
     """
     token = os.getenv("TOKEN")
+    web_app_url = os.getenv("WEB_APP_URL")
+
     if not token:
         logger.warning("Нет TOKEN в окружении — рассылка ивента пропущена")
         return
 
+    # создаём кнопку для мини-приложения
+    keyboard = None
+    if web_app_url:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Перейти", web_app=WebAppInfo(url=web_app_url))]])
+
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
     async with bot:
         for player in players:
             try:
-                await bot.send_message(chat_id=player["tg_id"], text=text, disable_web_page_preview=True)
+                await bot.send_message(
+                    chat_id=player["tg_id"],
+                    text=text,
+                    disable_web_page_preview=True,
+                    reply_markup=keyboard
+                )
             except Exception as exc:
                 logger.warning(f"Не удалось отправить сообщение {player['tg_id']}: {exc}")
 
