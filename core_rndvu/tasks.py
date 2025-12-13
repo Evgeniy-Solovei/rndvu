@@ -54,7 +54,7 @@ async def _send_event_notifications(players, text):
     Вызывается из Celery через asyncio.run().
     """
     token = os.getenv("TOKEN")
-    web_app_url = os.getenv("WEB_APP_URL", "https://rndvu.rozari.info/?open=events")
+    web_app_url = "https://rndvu.rozari.info/?startapp=events"
 
     if not token:
         logger.warning("Нет TOKEN в окружении — рассылка ивента пропущена")

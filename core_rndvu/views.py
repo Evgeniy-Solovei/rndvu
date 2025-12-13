@@ -213,7 +213,7 @@ class UserProfileView(APIView):
             try:
                 allowed_player_fields = {
                     "first_name", "username", "language_code",
-                    "hide_age_in_profile", "is_active", "city"
+                    "hide_age_in_profile", "is_active", "city", "alpha2"
                 }
                 updated = [f for f in allowed_player_fields if f in request.data]
                 for field in updated:

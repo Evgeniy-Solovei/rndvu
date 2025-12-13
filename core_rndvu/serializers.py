@@ -92,6 +92,7 @@ class ProfileManSerializer(ModelSerializer):
     class Meta:
         model = ProfileMan
         fields = '__all__'
+        extra_kwargs = {'player': {'read_only': True}}
 
 
 # def calc_like_ratio(likes_count: int, dislikes_count: int) -> float:
