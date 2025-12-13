@@ -10,7 +10,7 @@ from core_rndvu.models import BlacklistUser
 
 
 EXCLUDED_PATHS = ["/admin/", "/media/", "/static/", "/docs/", "/favicon.ico", "/rndvu/schema/",
-                  "/rndvu/schema/swagger-ui/", "/api/payment/webhook/"]
+                  "/rndvu/schema/swagger-ui/", "/api/payment/webhook/", "/api/events/"]
 
 
 def verify_telegram_auth(init_data: str, bot_token: str):
