@@ -553,6 +553,7 @@ class GameUsersView(APIView):
 
             # Параметры запроса для фильтрации передаваемых в URL
             city = request.query_params.get("city")
+            alpha2 = request.query_params.get("alpha2")
             min_age = request.query_params.get("min_age")
             max_age = request.query_params.get("max_age")
             page = int(request.query_params.get("page", 1) or 1)
@@ -573,11 +574,18 @@ class GameUsersView(APIView):
             # Базовый QS: показываем выбранный пол + активные + показ в игре + исключает себя
             qs = Player.objects.filter(gender=target_gender, is_active=True, show_in_game=True).exclude(id=player.id)
 
+            # Фильтр по стране, если передан (alpha2 как строка)
+            if alpha2 and alpha2.strip():
+                qs = qs.filter(alpha2=alpha2.strip().upper())
+
             # Для премиум-пользователей - каталог всех пользователей (не игра)
             if premium:
                 # Фильтр по городу (если задан)
                 if city:
-                    qs = qs.filter(city__icontains=city)
+                    try:
+                        qs = qs.filter(city=int(city))
+                    except ValueError:
+                        pass
                 
                 # Фильтруем пользователей, у которых есть профиль и хотя бы одно фото
                 # Используем Exists вместо JOIN для лучшей производительности:
@@ -625,7 +633,10 @@ class GameUsersView(APIView):
                 # Для обычных пользователей - игра с фильтрами по симпатиям и пропущенным
                 # Фильтр по городу (если задан)
                 if city:
-                    qs = qs.filter(city__icontains=city)
+                    try:
+                        qs = qs.filter(city=int(city))
+                    except ValueError:
+                        pass
 
                 # Исключаем тех, кому Я поставил симпатию (я → он)
                 qs = qs.exclude(id__in=Sympathy.objects.filter(from_player=player).values_list("to_player_id", flat=True))
@@ -1201,11 +1212,7 @@ class OppositeGenderEventsView(APIView):
             # Фильтр по стране (alpha2 из GeoNames), если передан
             alpha2 = request.GET.get('alpha2')
             if alpha2 and alpha2.strip():
-                try:
-                    alpha2_int = int(alpha2)
-                    events_query = events_query.filter(alpha2=alpha2_int)
-                except ValueError:
-                    pass
+                events_query = events_query.filter(alpha2=alpha2.strip().upper())
 
             # Фильтр по городу (если передан)
             city = request.GET.get('city')

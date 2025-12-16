@@ -710,7 +710,14 @@ game_users_schema = extend_schema(
             type=str,
             location=OpenApiParameter.QUERY,
             required=False,
-            description="Фильтр по городу (частичное совпадение)"
+            description="Фильтр по городу (ID GeoNames)"
+        ),
+        OpenApiParameter(
+            name="alpha2",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description="Фильтр по стране (ISO Alpha-2/Alpha-3)"
         ),
         OpenApiParameter(
             name="min_age",
@@ -1235,7 +1242,7 @@ opposite_gender_events_get_schema = extend_schema(
     description=(
         "Возвращает список активных ивентов противоположного пола текущего пользователя.\n\n"
         "Можно передать фильтры:\n"
-        "- alpha2 — фильтр по стране (GeoNames alpha2)\n"
+        "- alpha2 — фильтр по стране (ISO Alpha-2/Alpha-3)\n"
         "- city — фильтр по городу (GeoNames city id)\n"
         "- min_age — минимальный возраст участников\n"
         "- max_age — максимальный возраст участников\n"
@@ -1244,7 +1251,7 @@ opposite_gender_events_get_schema = extend_schema(
     ),
     parameters=[
         OpenApiParameter("event_id", OpenApiTypes.INT, OpenApiParameter.PATH, required=False),
-        OpenApiParameter("alpha2", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("alpha2", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("city", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("min_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("max_age", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
