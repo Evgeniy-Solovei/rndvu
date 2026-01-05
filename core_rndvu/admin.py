@@ -99,10 +99,27 @@ class SubscriptionGrantAdmin(admin.ModelAdmin):
     readonly_fields = ["duration_days", "created_at", "applied_by"]
     fields = ["player", "subscription_type", "duration_days", "created_at", "applied_by"]
 
+    def _reset_subscription(self, player_ids):
+        Player.objects.filter(id__in=player_ids).update(
+            paid_subscription=False,
+            count_days_paid_subscription=0,
+            subscription_end_date=None,
+        )
+
     def save_model(self, request, obj, form, change):
         if not change and not obj.applied_by:
             obj.applied_by = request.user
         super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        self._reset_subscription([obj.player_id])
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        player_ids = list(queryset.values_list("player_id", flat=True).distinct())
+        if player_ids:
+            self._reset_subscription(player_ids)
+        super().delete_queryset(request, queryset)
 
 #
 # @admin.register(PassedUser)
