@@ -4,7 +4,7 @@ import os
 import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardButton, WebAppInfo, InlineKeyboardMarkup, BotCommand
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
@@ -54,6 +54,13 @@ async def handle_start(message: types.Message):
     await message.answer(text, reply_markup=keyboard)
 
 
+@dp.message(Command("admin"))
+async def handle_admin(message: types.Message):
+    allowed_ids = {550092257, 777842796}
+    if message.from_user and message.from_user.id in allowed_ids:
+        await message.answer("Админ-панель: https://rndvu.rozari.info/admin/")
+
+
 async def main() -> None:
     await bot.delete_webhook(drop_pending_updates=True)
     await set_commands()
@@ -63,5 +70,3 @@ async def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     asyncio.run(main())
-
-

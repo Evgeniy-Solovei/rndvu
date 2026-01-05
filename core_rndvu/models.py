@@ -1,7 +1,11 @@
+from datetime import timedelta
+
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q, IntegerField, CharField, TextField, ForeignKey, CASCADE
+from django.utils import timezone
 
 from core_rndvu.validators import validate_birth_date, validate_photo_size
 
@@ -342,6 +346,14 @@ class SubscriptionType(models.TextChoices):
     YEARLY = "yearly", "1 год"
 
 
+SUBSCRIPTION_DAYS = {
+    SubscriptionType.WEEK: 7,
+    SubscriptionType.WEEK_2: 14,
+    SubscriptionType.MONTHLY: 30,
+    SubscriptionType.YEARLY: 365,
+}
+
+
 class Product(models.Model):
     """Товар, который пользователь может купить: подписка"""
     name = models.CharField(max_length=100, verbose_name="Название товара")
@@ -384,6 +396,44 @@ class Purchase(models.Model):
         return f"{self.player.tg_id} — {self.product.name}"
 
 
+class SubscriptionGrant(models.Model):
+    """Ручная выдача подписки пользователю через админку"""
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="subscription_grants", verbose_name="Пользователь")
+    subscription_type = models.CharField(max_length=20, choices=SubscriptionType.choices, verbose_name="Тип подписки")
+    duration_days = models.PositiveIntegerField(verbose_name="Количество дней")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата выдачи")
+    applied_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="subscription_grants", verbose_name="Кто выдал",)
+
+    class Meta:
+        verbose_name = "Выдача подписки"
+        verbose_name_plural = "Выдачи подписок"
+
+    def __str__(self):
+        return f"{self.player_id} - {self.subscription_type}"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        self.duration_days = SUBSCRIPTION_DAYS.get(self.subscription_type, self.duration_days or 0)
+        super().save(*args, **kwargs)
+        if is_new and self.duration_days:
+            self._apply_to_player()
+
+    def _apply_to_player(self):
+        today = timezone.localdate()
+        extra_days = self.duration_days
+        player = self.player
+        if player.subscription_end_date and player.subscription_end_date >= today:
+            player.subscription_end_date += timedelta(days=extra_days)
+        else:
+            player.subscription_end_date = today + timedelta(days=extra_days)
+        player.paid_subscription = True
+        if player.count_days_paid_subscription is None:
+            player.count_days_paid_subscription = 0
+        player.count_days_paid_subscription += extra_days
+        player.save(update_fields=["paid_subscription", "count_days_paid_subscription", "subscription_end_date"])
+
+
 class BlacklistUser(models.Model):
     """Черный список пользователей"""
     player = models.OneToOneField(Player, on_delete=models.CASCADE, related_name="blacklist_entry", verbose_name="Пользователь", null=True, blank=True)
@@ -398,4 +448,3 @@ class BlacklistUser(models.Model):
     def get_player_tg_id(self, obj):
         return obj.player.tg_id if obj.player else "—"
     get_player_tg_id.short_description = "Telegram ID"
-
