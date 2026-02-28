@@ -1081,11 +1081,18 @@ class EventPlayerView(APIView):
                 return Response(serializer.data)
             else:
                 # Получить все активные ивенты пользователя
-                today = timezone.now().date()
+                # OLD (фильтр только актуальных/без даты):
+                # today = timezone.now().date()
+                # events = Event.objects.select_related("profile").filter(
+                #     profile=player,
+                #     is_active=True
+                # ).filter(Q(date__isnull=True) | Q(date__gte=today))
+
+                # NEW (временно: отдаём все активные, без фильтра по дате)
                 events = Event.objects.select_related("profile").filter(
                     profile=player,
                     is_active=True
-                ).filter(Q(date__isnull=True) | Q(date__gte=today))
+                )
                 event_list = [event async for event in events.aiterator()]
                 serializer = EventSerializer(event_list, many=True)
                 return Response(serializer.data)
@@ -1249,10 +1256,11 @@ class OppositeGenderEventsView(APIView):
             if verification_filter and verification_filter.lower() in ['true', '1', 'yes']:
                 events_query = events_query.filter(profile__verification=True)
 
-            # Показываем только ивенты с датой сегодня и позже или без даты
-            today = timezone.now().date()
-            events_query = events_query.filter(Q(date__isnull=True) | Q(date__gte=today))
+            # OLD (фильтр только актуальных/без даты):
+            # today = timezone.now().date()
+            # events_query = events_query.filter(Q(date__isnull=True) | Q(date__gte=today))
 
+            # NEW (временно: отдаём все активные, без фильтра по дате)
             # Пагинация
             page = int(request.GET.get('page', 1))
             page_size = 10
