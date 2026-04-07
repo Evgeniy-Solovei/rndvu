@@ -1450,7 +1450,7 @@ class CreatePaymentView(APIView):
         tg_id = init_data.get("id")  # Извлекаем id игрока
         data = request.data
         product_id = data.get("product_id")  # Извлекаем id продукта из запроса
-        return_url = data.get("return_url", "https://rndvu.rozari.info/")  # Извлекаем url для редиректа после оплаты
+        return_url = data.get("return_url", "https://rndvu.rozari.vodka/")  # Извлекаем url для редиректа после оплаты
         # Получаем продукт и игрока
         try:
             player = await Player.objects.aget(tg_id=tg_id)

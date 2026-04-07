@@ -58,7 +58,7 @@ async def handle_start(message: types.Message):
 async def handle_admin(message: types.Message):
     allowed_ids = {550092257, 777842796}
     if message.from_user and message.from_user.id in allowed_ids:
-        await message.answer("Админ-панель: https://rndvu.rozari.info/admin/")
+        await message.answer("Админ-панель: https://rndvu.rozari.vodka/admin/")
 
 
 async def main() -> None:

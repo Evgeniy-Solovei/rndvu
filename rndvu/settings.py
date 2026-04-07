@@ -44,10 +44,10 @@ CORS_ALLOW_HEADERS = list(default_headers) + ["x-init-data", "x-test-mode"]
 ALLOWED_HOSTS = ['*']
 
 # Переменная для управления CORS, содержит список доменов с которых разрешены запросы
-CORS_ALLOWED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.info', "http://localhost:5173",
+CORS_ALLOWED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.vodka', "http://localhost:5173",
                         'http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000']
 # Переменная определяет список доменов, которым Django доверяет при обработке CSRF-токенов.
-CSRF_TRUSTED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.info', "http://localhost:5173",
+CSRF_TRUSTED_ORIGINS = ['https://206.189.79.110', 'http://206.189.79.110', 'https://rndvu.rozari.vodka', "http://localhost:5173",
                         'http://localhost:8000', 'http://127.0.0.1:8000', 'http://0.0.0.0:8000']
 
 # Application definition
